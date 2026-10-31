@@ -1,0 +1,151 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --font-ui: "Share Tech Mono", ui-monospace, monospace;
+  --cyan-core: #19ddff;
+  --cyan: #22d3ee;
+  --cyan-soft: #9fd8e8;
+  --cyan-mist: #bfeeff;
+  --cyan-ice: #d8fbff;
+  --amber: #f5a623;
+  --amber-soft: #ffb54d;
+  --danger: #ff4444;
+  --muted: #4a6b75;
+  --bg: #000000;
+  --bg-elev: #0a0f12;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--cyan-mist);
+  font-family: var(--font-ui);
+  overflow: hidden;
+}
+
+body {
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+::selection {
+  background: var(--cyan-core);
+  color: #000;
+}
+
+/* soft radial halo backdrop painted in CSS so first paint already has atmosphere.
+   Kept subtle so additive Bloom from the WebGL layer isn't amplified into a blob. */
+.jarvis-backdrop {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(45% 32% at 50% 48%, rgba(25, 221, 255, 0.07) 0%, rgba(25, 221, 255, 0.025) 55%, rgba(0, 0, 0, 0) 80%),
+    radial-gradient(120% 80% at 50% 110%, rgba(25, 221, 255, 0.015) 0%, rgba(0, 0, 0, 0) 70%),
+    #000;
+  pointer-events: none;
+}
+
+.jarvis-vignette {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(80% 60% at 50% 50%, rgba(0, 0, 0, 0) 55%, rgba(0, 0, 0, 0.8) 100%);
+  pointer-events: none;
+}
+
+.jarvis-scanline {
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    to bottom,
+    rgba(217, 251, 255, 0.025) 0px,
+    rgba(217, 251, 255, 0.025) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+  mix-blend-mode: screen;
+  pointer-events: none;
+}
+
+/* HUD text treatment */
+.hud {
+  font-family: var(--font-ui);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--cyan-mist);
+  text-shadow: 0 0 10px rgba(25, 221, 255, 0.35);
+}
+
+.hud-dim {
+  color: var(--muted);
+}
+
+.hud-amber {
+  color: var(--amber-soft);
+  text-shadow: 0 0 10px rgba(245, 166, 35, 0.4);
+}
+
+.hud-danger {
+  color: var(--danger);
+  text-shadow: 0 0 10px rgba(255, 68, 68, 0.5);
+}
+
+/* subtle neon ring used around chips */
+.hud-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.25rem 0.6rem;
+  border: 1px solid rgba(159, 216, 232, 0.3);
+  border-radius: 999px;
+  background: rgba(10, 15, 18, 0.4);
+  backdrop-filter: blur(6px);
+}
+
+/* corner brackets for HUD panels */
+.hud-brackets {
+  position: relative;
+}
+.hud-brackets::before,
+.hud-brackets::after,
+.hud-brackets > span.br-tl,
+.hud-brackets > span.br-tr,
+.hud-brackets > span.br-bl,
+.hud-brackets > span.br-br {
+  content: "";
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  border-color: var(--cyan-soft);
+  border-style: solid;
+  opacity: 0.7;
+}
+.hud-brackets::before {
+  top: 0; left: 0; border-width: 1px 0 0 1px;
+}
+.hud-brackets::after {
+  bottom: 0; right: 0; border-width: 0 1px 1px 0;
+}
+.hud-brackets > span.br-tr { top: 0; right: 0; border-width: 1px 1px 0 0; }
+.hud-brackets > span.br-bl { bottom: 0; left: 0; border-width: 0 0 1px 1px; }
+
+/* text appear-in */
+@keyframes rowIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.row-in {
+  animation: rowIn 220ms cubic-bezier(.22,1,.36,1) both;
+}
+
+/* reduced motion override */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}

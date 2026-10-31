@@ -1,0 +1,2626 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#010306">
+<title>Humanoid Interface</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@700;900&display=swap">
+<style>
+  :root {
+    --bg: #010306;
+    --ink: #c9e3e9;
+    --cyan: #2bc5df;
+    --cyan-hot: #9af0ff;
+    --edge: #0d3a42;
+    --edge-hot: #2a8c9c;
+    --panel: rgba(7, 13, 16, 0.86);
+    --panel-on: rgba(7, 42, 48, 0.94);
+    --mono: "Share Tech Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); overflow: hidden; }
+  body {
+    font-family: var(--mono);
+    color: var(--ink);
+    -webkit-font-smoothing: antialiased;
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
+  }
+  #stage { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+
+  .hud { position: fixed; inset: 0; pointer-events: none; z-index: 2; transition: opacity .6s ease; }
+  .hud button { pointer-events: auto; }
+  .hud.is-asleep .dock, .hud.is-asleep .tag { opacity: 0; pointer-events: none; }
+
+  .btn {
+    appearance: none; font: inherit;
+    display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+    height: 27px; padding: 0 11px;
+    border-radius: 6px; border: 1px solid var(--edge);
+    background: var(--panel); color: var(--ink);
+    font-size: 12.5px; letter-spacing: .02em; line-height: 1; white-space: nowrap;
+    cursor: pointer;
+    transition: color .18s, border-color .18s, background-color .18s, box-shadow .18s, transform .1s, opacity .3s;
+  }
+  .btn:hover { border-color: var(--edge-hot); color: #effcff; box-shadow: 0 0 16px rgba(43,197,223,.16), inset 0 0 10px rgba(43,197,223,.06); }
+  .btn:active { transform: translateY(1px); }
+  .btn:focus-visible { outline: 1px solid var(--cyan-hot); outline-offset: 2px; }
+  .btn svg { width: 12px; height: 12px; flex: none; }
+  .btn[aria-checked="true"], .btn[aria-pressed="true"] {
+    background: var(--panel-on); border-color: #11515b; color: #e3fbff;
+    box-shadow: 0 0 14px rgba(43,197,223,.14);
+  }
+  .btn.is-live { border-color: #2a9fb2; box-shadow: 0 0 0 1px rgba(43,197,223,.25), 0 0 18px rgba(43,197,223,.28); animation: live 1.6s ease-in-out infinite; }
+  @keyframes live { 50% { box-shadow: 0 0 0 1px rgba(43,197,223,.1), 0 0 8px rgba(43,197,223,.12); } }
+
+  .top { position: absolute; top: 18px; left: 12px; display: flex; gap: 11px; }
+  .btn--top {
+    height: 44px; padding: 0 16px; border-radius: 9px;
+    font-size: 13px; letter-spacing: .06em; color: var(--cyan);
+    background: rgba(0, 7, 11, .74); border-color: #073e48;
+  }
+  .btn--exit { letter-spacing: .16em; padding: 0 15px; }
+
+  .dock {
+    position: absolute; left: 50%; bottom: max(7px, env(safe-area-inset-bottom));
+    transform: translateX(-50%);
+    display: flex; gap: 7px; flex-wrap: wrap; justify-content: center;
+    width: max-content; max-width: calc(100vw - 16px);
+    transition: opacity .5s ease;
+  }
+  .dock__group { display: flex; gap: 7px; }
+
+  .tag {
+    position: absolute; left: 0; top: 0;
+    font-size: 8.5px; letter-spacing: .26em; color: #15bcda;
+    text-shadow: 0 0 8px rgba(21,188,218,.55);
+    white-space: nowrap; pointer-events: none; will-change: transform;
+    transform: translate3d(-999px, -999px, 0);
+    transition: opacity .5s ease;
+  }
+
+  .toast {
+    position: absolute; left: 50%; bottom: 46px; transform: translate(-50%, 6px);
+    font-size: 10px; letter-spacing: .22em; color: #ffb36b;
+    text-shadow: 0 0 10px rgba(255,140,40,.45);
+    opacity: 0; transition: opacity .3s ease, transform .3s ease;
+  }
+  .toast.is-on { opacity: 1; transform: translate(-50%, 0); }
+
+  .thinking {
+    position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    display: flex; gap: 6px; align-items: center;
+    opacity: 0; pointer-events: none; transition: opacity .3s ease;
+    z-index: 1;
+  }
+  .thinking.is-active { opacity: 1; }
+  .thinking__dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--cyan-hot);
+    box-shadow: 0 0 12px rgba(154, 240, 255, 0.8);
+    animation: think-pulse 1.2s ease-in-out infinite;
+  }
+  .thinking__dot:nth-child(2) { animation-delay: 0.2s; }
+  .thinking__dot:nth-child(3) { animation-delay: 0.4s; }
+  @keyframes think-pulse {
+    0%, 100% { opacity: 0.3; transform: scale(0.8); }
+    50% { opacity: 1; transform: scale(1.2); }
+  }
+
+  .veil {
+    position: fixed; inset: 0; z-index: 3; display: grid; place-items: center;
+    pointer-events: none; opacity: 0; transition: opacity .6s ease;
+  }
+  .veil.is-on { opacity: 1; pointer-events: auto; }
+  .veil__box { display: grid; gap: 14px; justify-items: center; }
+  .veil__title { font-size: 11px; letter-spacing: .4em; color: #15bcda; text-shadow: 0 0 10px rgba(21,188,218,.5); }
+
+  .boot {
+    position: fixed; inset: 0; z-index: 4; display: grid; place-items: center;
+    background: var(--bg); color: #15bcda; font-size: 10px; letter-spacing: .4em;
+    transition: opacity .9s ease;
+  }
+  .boot.is-done { opacity: 0; pointer-events: none; }
+
+  @media (max-width: 640px) {
+    .top { top: 12px; left: 10px; gap: 8px; }
+    .btn--top { height: 36px; padding: 0 12px; font-size: 12px; }
+    .dock { gap: 6px; }
+    .dock__group { gap: 6px; }
+    .btn { height: 26px; padding: 0 9px; font-size: 11.5px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .btn.is-live { animation: none; }
+  }
+</style>
+
+<!-- three.js from the CDN. Pin the version you test with. -->
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/"
+  }
+}
+</script>
+</head>
+<body>
+<canvas id="stage" aria-label="Interactive 3D assistant avatar"></canvas>
+
+<div class="hud" id="hud">
+  <div class="top">
+    <button class="btn btn--top btn--exit" id="btn-exit" type="button">EXIT</button>
+    <button class="btn btn--top" id="btn-gesture" type="button" aria-pressed="false" title="Toggle hand gesture control" style="display:none">Open hand gesture</button>
+  </div>
+
+  <div class="tag" id="status" aria-live="polite">STATUS: IDLE</div>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <!-- Kept so the humanoid script's setState() can touch classList; hidden via CSS below. -->
+  <div class="thinking" id="thinking" aria-hidden="true" style="display:none">
+    <div class="thinking__dot"></div>
+    <div class="thinking__dot"></div>
+    <div class="thinking__dot"></div>
+  </div>
+
+  <nav class="dock" aria-label="Assistant controls">
+    <div class="dock__group" role="radiogroup" aria-label="Assistant state">
+      <button class="btn" type="button" role="radio" data-state="idle" aria-checked="true">idle</button>
+      <button class="btn" type="button" role="radio" data-state="listening" aria-checked="false">listening</button>
+      <button class="btn" type="button" role="radio" data-state="thinking" aria-checked="false">thinking</button>
+      <button class="btn" type="button" role="radio" data-state="speaking" aria-checked="false">speaking</button>
+    </div>
+    <button class="btn" id="btn-mic" type="button" aria-pressed="false">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="2.5" width="6" height="12" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></svg>
+      <span>MIC OFF</span>
+    </button>
+    <button class="btn" id="btn-replay" type="button" style="display:none">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.6-5.9"/><path d="M20 4v5h-5"/></svg>
+      <span>REPLAY</span>
+    </button>
+    <button class="btn" id="btn-clap" type="button" aria-pressed="true" title="Wake Ultron by double-clapping">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 13l2-4m-2 4l-2 1m2-1l1 2M15 7l-2 4m2-4l2-1m-2 1l-1-2M5 20h14a2 2 0 0 0 2-2v-3a7 7 0 0 0-7-7h-4a7 7 0 0 0-7 7v3a2 2 0 0 0 2 2z"/></svg>
+      <span>CLAP ON</span>
+    </button>
+    <button class="btn" id="btn-sound" type="button" aria-pressed="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 18V4l8 2.5"/><circle cx="7" cy="18" r="3" fill="currentColor"/><path class="mute" d="M3 3l18 18" style="display:none"/></svg>
+      <span>SOUND ON</span>
+    </button>
+  </nav>
+</div>
+
+<div class="veil" id="veil" aria-hidden="true">
+  <div class="veil__box">
+    <div class="veil__title">SESSION ENDED</div>
+    <button class="btn" id="btn-resume" type="button">RESUME</button>
+  </div>
+</div>
+<div class="boot" id="boot">INITIALIZING</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+
+/* =====================================================================
+   CONFIG: the knobs you are most likely to touch
+   ===================================================================== */
+const CONFIG = {
+  // Demo mode simulates audio levels and plays a short demo on REPLAY.
+  // Set to false once your backend drives the states and audio.
+  demoMode: false,
+  // Show the built-in SESSION ENDED veil on EXIT. Set false to handle exit yourself.
+  exitOverlay: true,
+  seed: 20261028,
+  maxPixelRatio: 1.75,
+  gaze: {
+    maxYaw: 0.62,        // radians left/right
+    maxPitchUp: 0.30,    // radians looking up
+    maxPitchDown: 0.38,  // radians looking down
+    stiffness: 34,       // spring stiffness of the head
+    damping: 10.5,       // spring damping (lower = more overshoot)
+  },
+  bloom: { strength: 0.8, radius: 0.22, threshold: 0.30 },
+  exposure: 1.0,
+};
+
+const REDUCED_MOTION = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+const Q = (() => {
+  const small = Math.min(window.innerWidth, window.innerHeight) < 640;
+  const low = small || (navigator.hardwareConcurrency || 8) <= 4;
+  return low
+    ? { around: 200, rings: 176, dots: 36000, dust: 2600, tStep: 0.1, sky: 2600 }
+    : { around: 256, rings: 214, dots: 62000, dust: 4600, tStep: 0.064, sky: 5200 };
+})();
+
+/* =====================================================================
+   Small math helpers, seeded RNG and 2D simplex noise
+   ===================================================================== */
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const lerp = (a, b, t) => a + (b - a) * t;
+const smoothstep = (e0, e1, x) => { const t = clamp((x - e0) / (e1 - e0), 0, 1); return t * t * (3 - 2 * t); };
+
+function mulberry32(seed) {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function makeNoise2D(rng) {
+  const perm = new Uint8Array(512), p = new Uint8Array(256);
+  for (let i = 0; i < 256; i++) p[i] = i;
+  for (let i = 255; i > 0; i--) { const j = (rng() * (i + 1)) | 0; const t = p[i]; p[i] = p[j]; p[j] = t; }
+  for (let i = 0; i < 512; i++) perm[i] = p[i & 255];
+  const gx = [1, -1, 1, -1, 1, -1, 0, 0], gy = [1, 1, -1, -1, 0, 0, 1, -1];
+  const F2 = 0.5 * (Math.sqrt(3) - 1), G2 = (3 - Math.sqrt(3)) / 6;
+  return (x, y) => {
+    const s = (x + y) * F2, i = Math.floor(x + s), j = Math.floor(y + s);
+    const t = (i + j) * G2, x0 = x - (i - t), y0 = y - (j - t);
+    const i1 = x0 > y0 ? 1 : 0, j1 = 1 - i1;
+    const x1 = x0 - i1 + G2, y1 = y0 - j1 + G2, x2 = x0 - 1 + 2 * G2, y2 = y0 - 1 + 2 * G2;
+    const ii = i & 255, jj = j & 255;
+    let n = 0, tt, g;
+    tt = 0.5 - x0 * x0 - y0 * y0; if (tt > 0) { g = perm[ii + perm[jj]] & 7; tt *= tt; n += tt * tt * (gx[g] * x0 + gy[g] * y0); }
+    tt = 0.5 - x1 * x1 - y1 * y1; if (tt > 0) { g = perm[ii + i1 + perm[jj + j1]] & 7; tt *= tt; n += tt * tt * (gx[g] * x1 + gy[g] * y1); }
+    tt = 0.5 - x2 * x2 - y2 * y2; if (tt > 0) { g = perm[ii + 1 + perm[jj + 1]] & 7; tt *= tt; n += tt * tt * (gx[g] * x2 + gy[g] * y2); }
+    return 70 * n;
+  };
+}
+
+const rng = mulberry32(CONFIG.seed);
+const noise = makeNoise2D(rng);
+
+/* =====================================================================
+   Renderer, scene, camera, shared uniforms
+   ===================================================================== */
+const canvas = document.getElementById('stage');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
+renderer.setClearColor(0x010306, 1);
+renderer.toneMapping = THREE.NeutralToneMapping;
+renderer.toneMappingExposure = CONFIG.exposure;
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(30, 1, 0.05, 90);
+const camBase = new THREE.Vector3(0, 0.5, 3.53);
+const camTarget = new THREE.Vector3(0, 0.385, 0);
+
+// One shared uniform set. Every material references these objects, so one update drives all.
+const U = {
+  uTime:   { value: 0 },
+  uHeadRot:{ value: new THREE.Vector3() },          // yaw, pitch, roll
+  uPivot:  { value: new THREE.Vector3(0, 0.28, -0.09) },
+  uListen: { value: 0 },
+  uThink:  { value: 0 },
+  uSpeak:  { value: 0 },
+  uLevel:  { value: 0 },
+  uSwirl:  { value: 0 },
+  uFaceGlow: { value: 0.2 },
+  uPR:     { value: 1 },
+  uScale:  { value: 1 },
+};
+
+const GLSL_COMMON = /* glsl */`
+  uniform float uTime;
+  uniform vec3 uHeadRot;
+  uniform vec3 uPivot;
+  uniform float uListen;
+  uniform float uThink;
+  uniform float uSpeak;
+  uniform float uLevel;
+  uniform float uSwirl;
+  uniform float uPR;
+  uniform float uScale;
+
+  mat3 rotYXZ(vec3 r) {
+    float cy = cos(r.x), sy = sin(r.x);
+    float cp = cos(r.y), sp = sin(r.y);
+    float cr = cos(r.z), sr = sin(r.z);
+    mat3 ry = mat3(cy, 0.0, -sy,  0.0, 1.0, 0.0,  sy, 0.0, cy);
+    mat3 rx = mat3(1.0, 0.0, 0.0,  0.0, cp, sp,  0.0, -sp, cp);
+    mat3 rz = mat3(cr, sr, 0.0,  -sr, cr, 0.0,  0.0, 0.0, 1.0);
+    return ry * rx * rz;
+  }
+  // Rotates a rest-pose point by the head rotation, scaled by its skin weight (1 = head, 0 = torso).
+  vec3 deform(vec3 p, float w, inout vec3 n) {
+    mat3 R = rotYXZ(uHeadRot * w);
+    n = R * n;
+    return uPivot + R * (p - uPivot);
+  }
+  float hash11(float p) { p = fract(p * 0.1031); p *= p + 33.33; p *= p + p; return fract(p); }
+  float hash13(vec3 p3) { p3 = fract(p3 * 0.1031); p3 += dot(p3, p3.zyx + 31.32); return fract((p3.x + p3.y) * p3.z); }
+
+  // Warm region on the lower face (rest pose space).
+  float faceMask(vec3 p, vec3 n) {
+    vec3 d = (p - vec3(0.0, 0.43, 0.33)) * vec3(1.0, 0.95, 1.5);
+    float m = 1.0 - smoothstep(0.0, 0.26, length(d));
+    return m * sqrt(m) * smoothstep(-0.25, 0.45, n.z) * smoothstep(0.17, 0.27, p.y);
+  }
+`;
+
+/* =====================================================================
+   BUST: signed distance model of a featureless head + shoulders
+   ===================================================================== */
+function ell(x, y, z, rx, ry, rz) {
+  const ax = x / rx, ay = y / ry, az = z / rz;
+  const k0 = Math.sqrt(ax * ax + ay * ay + az * az);
+  const bx = ax / rx, by = ay / ry, bz = az / rz;
+  const k1 = Math.sqrt(bx * bx + by * by + bz * bz) || 1e-9;
+  return k0 * (k0 - 1) / k1;
+}
+function cap(x, y, z, ax, ay, az, bx, by, bz, r) {
+  const pax = x - ax, pay = y - ay, paz = z - az, bax = bx - ax, bay = by - ay, baz = bz - az;
+  const h = clamp((pax * bax + pay * bay + paz * baz) / (bax * bax + bay * bay + baz * baz), 0, 1);
+  const dx = pax - bax * h, dy = pay - bay * h, dz = paz - baz * h;
+  return Math.sqrt(dx * dx + dy * dy + dz * dz) - r;
+}
+const sph = (x, y, z, r) => Math.sqrt(x * x + y * y + z * z) - r;
+function smin(a, b, k) { const h = Math.max(k - Math.abs(a - b), 0) / k; return Math.min(a, b) - h * h * k * 0.25; }
+const smax = (a, b, k) => -smin(-a, -b, k);
+
+function bustSDF(x, y, z) {
+  const ax = x < 0 ? -x : x;
+  // head
+  let d = ell(x, y - 0.70, z + 0.03, 0.330, 0.372, 0.400);                     // cranium
+  d = smin(d, ell(x, y - 0.43, z - 0.04, 0.250, 0.300, 0.300), 0.16);          // lower face and jaw
+  d = smin(d, ell(x, y - 0.215, z - 0.19, 0.095, 0.070, 0.085), 0.09);         // chin
+  d = smin(d, cap(x, y, z, -0.15, 0.688, 0.302, 0.15, 0.688, 0.302, 0.050), 0.07); // brow
+  d = smin(d, cap(x, y, z, 0, 0.622, 0.350, 0, 0.505, 0.392, 0.029), 0.045);   // nose
+  d = smin(d, ell(ax - 0.184, y - 0.528, z - 0.192, 0.088, 0.068, 0.098), 0.07); // cheekbones
+  d = smax(d, -ell(ax - 0.114, y - 0.606, z - 0.370, 0.072, 0.044, 0.060), 0.05); // eye sockets
+  d = smin(d, ell(x, y - 0.383, z - 0.296, 0.082, 0.033, 0.047), 0.035);       // lips
+  d = smin(d, ell(ax - 0.322, y - 0.575, z + 0.040, 0.036, 0.098, 0.064), 0.035); // ears
+  // neck
+  const neck = smin(cap(ax, y, z, 0.065, -0.30, -0.13, 0.065, 0.36, -0.07, 0.175), cap(x, y, z, 0, -0.30, -0.12, 0, 0.36, -0.06, 0.17), 0.08);
+  d = smin(d, neck, 0.06);
+  // torso
+  let t = cap(ax, y, z, 0.0, -0.19, -0.085, 0.60, -0.33, -0.085, 0.20);        // shoulder girdle
+  t = smin(t, ell(x, y + 1.02, z + 0.02, 0.86, 0.84, 0.36), 0.26);             // ribcage
+  t = smin(t, ell(ax - 0.29, y + 0.63, z - 0.10, 0.29, 0.20, 0.22), 0.12);      // chest
+  t = smin(t, sph(ax - 0.68, y + 0.44, z + 0.05, 0.24), 0.12);                  // deltoids
+  t = smin(t, cap(ax, y, z, 0.74, -0.52, -0.05, 0.80, -1.9, -0.05, 0.215), 0.08); // arms
+  return smin(d, t, 0.30);
+}
+
+// How much a rest-pose point follows the head rotation (smoothly twists the neck).
+function headWeight(x, y, z) {
+  const rxz = Math.sqrt(x * x + (z + 0.09) * (z + 0.09));
+  const wy = smoothstep(-0.10, 0.28, y);
+  const radial = 1 - smoothstep(0.27, 0.42, rxz) * (1 - smoothstep(0.14, 0.30, y));
+  return wy * radial;
+}
+
+// Scalar field whose level sets become the glowing contour lines.
+// Head: horizontal slices. Neck: tilted slices. Chest and shoulders: depth slices.
+function contourField(x, y, z) {
+  const gHead = smoothstep(-0.02, 0.24, y);
+  const gChest = smoothstep(-0.04, -0.32, y);
+  const ang = lerp(lerp(0.80, Math.PI / 2, gHead), 0.10, gChest);
+  const sp = lerp(lerp(0.0150, 0.0218, gHead), 0.0132, gChest);
+  return ((y - 0.10) * Math.sin(ang) + (z - 0.21) * Math.cos(ang)) / sp;
+}
+
+function buildBust() {
+  const t0 = performance.now();
+  const NT = Q.around, NY = Q.rings, Y0 = -0.92;
+  const axisZ = (y) => lerp(-0.07, -0.03, smoothstep(0.15, 0.40, y));
+  let lo = 0.95, hi = 1.3;
+  for (let i = 0; i < 40; i++) { const m = (lo + hi) / 2; if (bustSDF(0, m, axisZ(m)) < 0) lo = m; else hi = m; }
+  const Y1 = lo - 0.002;
+
+  // 1. Sample the surface as rings (star shaped from the vertical axis).
+  const NV = NT * NY;
+  const P = new Float32Array(NV * 3), N = new Float32Array(NV * 3), W = new Float32Array(NV), F = new Float32Array(NV);
+  const sinT = new Float32Array(NT), cosT = new Float32Array(NT);
+  for (let j = 0; j < NT; j++) { const a = (j / NT) * Math.PI * 2; sinT[j] = Math.sin(a); cosT[j] = Math.cos(a); }
+  for (let i = 0; i < NY; i++) {
+    const y = Y0 + (Y1 - Y0) * (i / (NY - 1)), zc = axisZ(y);
+    for (let j = 0; j < NT; j++) {
+      const dx = sinT[j], dz = cosT[j];
+      let r = 1.5, d = bustSDF(dx * r, y, zc + dz * r), it = 0;
+      while (d > 3e-4 && it++ < 140) {
+        r -= Math.max(d * 0.9, 6e-4);
+        if (r <= 0) { r = 0; break; }
+        d = bustSDF(dx * r, y, zc + dz * r);
+      }
+      const k = i * NT + j, x = dx * r, z = zc + dz * r;
+      P[k * 3] = x; P[k * 3 + 1] = y; P[k * 3 + 2] = z;
+      const e = 0.0025;
+      const nx = bustSDF(x + e, y, z) - bustSDF(x - e, y, z);
+      const ny = bustSDF(x, y + e, z) - bustSDF(x, y - e, z);
+      const nz = bustSDF(x, y, z + e) - bustSDF(x, y, z - e);
+      const nl = Math.sqrt(nx * nx + ny * ny + nz * nz) || 1;
+      N[k * 3] = nx / nl; N[k * 3 + 1] = ny / nl; N[k * 3 + 2] = nz / nl;
+      W[k] = headWeight(x, y, z);
+      F[k] = contourField(x, y, z);
+    }
+  }
+
+  // 2. Occluder: the same surface, pulled slightly inward. Hides back lines and the landscape.
+  const occPos = new Float32Array((NV + 1) * 3), occNor = new Float32Array((NV + 1) * 3), occW = new Float32Array(NV + 1);
+  for (let k = 0; k < NV; k++) {
+    for (let c = 0; c < 3; c++) { occPos[k * 3 + c] = P[k * 3 + c] - N[k * 3 + c] * 0.007; occNor[k * 3 + c] = N[k * 3 + c]; }
+    occW[k] = W[k];
+  }
+  const capK = NV; // crown cap vertex
+  occPos[capK * 3] = 0; occPos[capK * 3 + 1] = Y1 + 0.001; occPos[capK * 3 + 2] = axisZ(Y1);
+  occNor[capK * 3 + 1] = 1; occW[capK] = 1;
+  const idx = [];
+  for (let i = 0; i < NY - 1; i++) for (let j = 0; j < NT; j++) {
+    const a = i * NT + j, b = i * NT + (j + 1) % NT, c = (i + 1) * NT + j, d = (i + 1) * NT + (j + 1) % NT;
+    idx.push(a, b, d, a, d, c);
+  }
+  for (let j = 0; j < NT; j++) idx.push((NY - 1) * NT + j, (NY - 1) * NT + (j + 1) % NT, capK);
+  const occGeo = new THREE.BufferGeometry();
+  occGeo.setAttribute('position', new THREE.BufferAttribute(occPos, 3));
+  occGeo.setAttribute('normal', new THREE.BufferAttribute(occNor, 3));
+  occGeo.setAttribute('aW', new THREE.BufferAttribute(occW, 1));
+  occGeo.setIndex(idx);
+
+  // 3. Contours: marching triangles over the ring mesh.
+  const segList = [];       // flat list of [ia, ib, t] pairs per vertex, plus level
+  const keepTri = (ia, ib, ic) => {
+    // Skip torso back faces that never rotate into view.
+    const w = W[ia] + W[ib] + W[ic], nz = N[ia * 3 + 2] + N[ib * 3 + 2] + N[ic * 3 + 2];
+    return !(w < 0.15 && nz < -1.0);
+  };
+  const tri = (ia, ib, ic) => {
+    if (!keepTri(ia, ib, ic)) return;
+    const fa = F[ia], fb = F[ib], fc = F[ic];
+    const L0 = Math.ceil(Math.min(fa, fb, fc)), L1 = Math.floor(Math.max(fa, fb, fc));
+    for (let L = L0; L <= L1; L++) {
+      let n = 0, e0a = 0, e0b = 0, e0t = 0, e1a = 0, e1b = 0, e1t = 0;
+      const test = (i1, i2, f1, f2) => {
+        if ((f1 < L) !== (f2 < L)) {
+          const tt = (L - f1) / (f2 - f1);
+          if (n === 0) { e0a = i1; e0b = i2; e0t = tt; } else { e1a = i1; e1b = i2; e1t = tt; }
+          n++;
+        }
+      };
+      test(ia, ib, fa, fb); test(ib, ic, fb, fc); test(ic, ia, fc, fa);
+      if (n === 2) segList.push(e0a, e0b, e0t, e1a, e1b, e1t, L);
+    }
+  };
+  for (let i = 0; i < NY - 1; i++) for (let j = 0; j < NT; j++) {
+    const a = i * NT + j, b = i * NT + (j + 1) % NT, c = (i + 1) * NT + j, d = (i + 1) * NT + (j + 1) % NT;
+    tri(a, b, d); tri(a, d, c);
+  }
+  const nSeg = segList.length / 7;
+  const lPos = new Float32Array(nSeg * 6), lNor = new Float32Array(nSeg * 6), lW = new Float32Array(nSeg * 2), lLev = new Float32Array(nSeg * 2);
+  const interp = (ia, ib, t, outP, outN, o) => {
+    let nl = 0;
+    for (let c = 0; c < 3; c++) {
+      outP[o + c] = P[ia * 3 + c] + (P[ib * 3 + c] - P[ia * 3 + c]) * t;
+      const nv = N[ia * 3 + c] + (N[ib * 3 + c] - N[ia * 3 + c]) * t;
+      outN[o + c] = nv; nl += nv * nv;
+    }
+    nl = Math.sqrt(nl) || 1;
+    outN[o] /= nl; outN[o + 1] /= nl; outN[o + 2] /= nl;
+    return W[ia] + (W[ib] - W[ia]) * t;
+  };
+  let totalLen = 0;
+  for (let s = 0; s < nSeg; s++) {
+    const q = s * 7;
+    lW[s * 2] = interp(segList[q], segList[q + 1], segList[q + 2], lPos, lNor, s * 6);
+    lW[s * 2 + 1] = interp(segList[q + 3], segList[q + 4], segList[q + 5], lPos, lNor, s * 6 + 3);
+    lLev[s * 2] = lLev[s * 2 + 1] = segList[q + 6];
+    const dx = lPos[s * 6 + 3] - lPos[s * 6], dy = lPos[s * 6 + 4] - lPos[s * 6 + 1], dz = lPos[s * 6 + 5] - lPos[s * 6 + 2];
+    totalLen += Math.sqrt(dx * dx + dy * dy + dz * dz);
+  }
+  const lineGeo = new THREE.BufferGeometry();
+  lineGeo.setAttribute('position', new THREE.BufferAttribute(lPos, 3));
+  lineGeo.setAttribute('normal', new THREE.BufferAttribute(lNor, 3));
+  lineGeo.setAttribute('aW', new THREE.BufferAttribute(lW, 1));
+  lineGeo.setAttribute('aLevel', new THREE.BufferAttribute(lLev, 1));
+
+  // 4. Dots scattered along the contours: the particle texture of the lines.
+  const spacing = totalLen / Q.dots;
+  const dP = [], dN = [], dW = [], dL = [], dR = [];
+  for (let s = 0; s < nSeg; s++) {
+    const o = s * 6;
+    const dx = lPos[o + 3] - lPos[o], dy = lPos[o + 4] - lPos[o + 1], dz = lPos[o + 5] - lPos[o + 2];
+    const len = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    const cnt = Math.floor(len / spacing + rng());
+    for (let c = 0; c < cnt; c++) {
+      const t = rng();
+      dP.push(lPos[o] + dx * t, lPos[o + 1] + dy * t, lPos[o + 2] + dz * t);
+      dN.push(lerp(lNor[o], lNor[o + 3], t), lerp(lNor[o + 1], lNor[o + 4], t), lerp(lNor[o + 2], lNor[o + 5], t));
+      dW.push(lerp(lW[s * 2], lW[s * 2 + 1], t));
+      dL.push(lLev[s * 2]);
+      dR.push(rng());
+    }
+  }
+  const dotGeo = new THREE.BufferGeometry();
+  dotGeo.setAttribute('position', new THREE.Float32BufferAttribute(dP, 3));
+  dotGeo.setAttribute('normal', new THREE.Float32BufferAttribute(dN, 3));
+  dotGeo.setAttribute('aW', new THREE.Float32BufferAttribute(dW, 1));
+  dotGeo.setAttribute('aLevel', new THREE.Float32BufferAttribute(dL, 1));
+  dotGeo.setAttribute('aRnd', new THREE.Float32BufferAttribute(dR, 1));
+
+  // Surface sampler in (height, angle) space, used by veins, dust and sparks.
+  const sample = (y, th) => {
+    const fi = clamp((y - Y0) / (Y1 - Y0) * (NY - 1), 0, NY - 1.0001);
+    const i0 = Math.floor(fi), ti = fi - i0;
+    let fj = (th / (Math.PI * 2)) * NT; fj = ((fj % NT) + NT) % NT;
+    const j0 = Math.floor(fj) % NT, j1 = (j0 + 1) % NT, tj = fj - Math.floor(fj);
+    const k00 = i0 * NT + j0, k01 = i0 * NT + j1, k10 = (i0 + 1) * NT + j0, k11 = (i0 + 1) * NT + j1;
+    const p = [0, 0, 0], n = [0, 0, 0];
+    for (let c = 0; c < 3; c++) {
+      p[c] = lerp(lerp(P[k00 * 3 + c], P[k01 * 3 + c], tj), lerp(P[k10 * 3 + c], P[k11 * 3 + c], tj), ti);
+      n[c] = lerp(lerp(N[k00 * 3 + c], N[k01 * 3 + c], tj), lerp(N[k10 * 3 + c], N[k11 * 3 + c], tj), ti);
+    }
+    const nl = Math.hypot(n[0], n[1], n[2]) || 1;
+    n[0] /= nl; n[1] /= nl; n[2] /= nl;
+    const w = lerp(lerp(W[k00], W[k01], tj), lerp(W[k10], W[k11], tj), ti);
+    return { p, n, w };
+  };
+
+  // 5. Veins: branching energy channels running from the throat down the chest.
+  const veins = [];
+  const grow = (y, th, len, inten, depth, target, s0, seed) => {
+    const pts = [];
+    let s = s0, dth = 0;
+    const ph = rng() * 100;
+    while (len > 0 && y > Y0 + 0.04) {
+      pts.push([y, th, s]);
+      dth = dth * 0.7 + noise(ph, s * 6.0) * (depth ? 0.007 : 0.0065) + (target - th) * (depth ? 0.03 : 0.02);
+      th += dth; y -= 0.008; s += 0.008; len -= 0.008;
+      if (depth < 2 && y < 0.02 && rng() < (depth === 0 ? 0.045 : 0.02)) {
+        const dir = th === 0 ? (rng() < 0.5 ? -1 : 1) : Math.sign(th);
+        grow(y, th, Math.min(len, 0.34) * (0.3 + rng() * 0.5), inten * 0.6, depth + 1, th + dir * (0.35 + rng() * 0.45), s, seed + rng());
+      }
+    }
+    pts.push([y, th, s]);
+    if (pts.length > 2) veins.push({ pts, inten, seed });
+  };
+  grow(0.10, -0.24, 1.2, 1.0, 0, -0.05, 0, 0.13);
+  grow(0.10, 0.24, 1.2, 1.0, 0, 0.05, 0, 0.61);
+  grow(-0.02, -0.5, 0.34, 0.45, 1, -0.75, 0.1, 0.37);
+  grow(-0.02, 0.5, 0.34, 0.45, 1, 0.75, 0.1, 0.83);
+  const vP = [], vN = [], vW = [], vS = [], vI = [], vSeed = [];
+  const nodeP = [], nodeN = [], nodeW = [], nodeR = [];
+  for (const v of veins) {
+    let prev = null;
+    for (const [y, th, s] of v.pts) {
+      const sm = sample(y, th);
+      const p = [sm.p[0] + sm.n[0] * 0.004, sm.p[1] + sm.n[1] * 0.004, sm.p[2] + sm.n[2] * 0.004];
+      const cur = { p, n: sm.n, w: sm.w, s };
+      if (prev) {
+        for (const e of [prev, cur]) { vP.push(...e.p); vN.push(...e.n); vW.push(e.w); vS.push(e.s); vI.push(v.inten); vSeed.push(v.seed); }
+      }
+      if (rng() < (v.inten > 0.9 ? 0.16 : 0.05)) { nodeP.push(...p); nodeN.push(...sm.n); nodeW.push(sm.w); nodeR.push(rng()); }
+      prev = cur;
+    }
+  }
+  const veinGeo = new THREE.BufferGeometry();
+  veinGeo.setAttribute('position', new THREE.Float32BufferAttribute(vP, 3));
+  veinGeo.setAttribute('normal', new THREE.Float32BufferAttribute(vN, 3));
+  veinGeo.setAttribute('aW', new THREE.Float32BufferAttribute(vW, 1));
+  veinGeo.setAttribute('aS', new THREE.Float32BufferAttribute(vS, 1));
+  veinGeo.setAttribute('aI', new THREE.Float32BufferAttribute(vI, 1));
+  veinGeo.setAttribute('aSeed', new THREE.Float32BufferAttribute(vSeed, 1));
+  const nodeGeo = new THREE.BufferGeometry();
+  nodeGeo.setAttribute('position', new THREE.Float32BufferAttribute(nodeP, 3));
+  nodeGeo.setAttribute('normal', new THREE.Float32BufferAttribute(nodeN, 3));
+  nodeGeo.setAttribute('aW', new THREE.Float32BufferAttribute(nodeW, 1));
+  nodeGeo.setAttribute('aRnd', new THREE.Float32BufferAttribute(nodeR, 1));
+
+  // 6. Dust: a halo of particles clinging to the crown and the silhouette.
+  const sP = [], sD = [], sW = [], sR = [];
+  let guard = 0;
+  while (sW.length < Q.dust && guard++ < Q.dust * 40) {
+    const k = (rng() * NV) | 0;
+    const y = P[k * 3 + 1], nz = N[k * 3 + 2];
+    let wgt;
+    if (y > 0.24) {
+      wgt = 0.22 + 2.4 * smoothstep(0.82, 1.06, y) + 1.0 * (1 - Math.abs(nz)) * smoothstep(0.3, 0.6, y);
+      if (nz > 0.55 && y < 0.92) wgt *= 0.04;
+    } else {
+      wgt = 0.45 * (1 - Math.abs(nz)) * smoothstep(-0.75, -0.05, y);
+      if (nz > 0.5) wgt *= 0.1;
+    }
+    if (rng() * 3.2 > wgt) continue;
+    const head = y > 0.24;
+    const dist = head ? 0.004 + 0.15 * Math.pow(rng(), 2.3) : 0.004 + 0.07 * Math.pow(rng(), 2.0);
+    const j = 0.012;
+    sP.push(
+      P[k * 3] + N[k * 3] * dist + (rng() - 0.5) * j,
+      P[k * 3 + 1] + N[k * 3 + 1] * dist + (rng() - 0.5) * j,
+      P[k * 3 + 2] + N[k * 3 + 2] * dist + (rng() - 0.5) * j
+    );
+    sD.push(N[k * 3], N[k * 3 + 1], N[k * 3 + 2]);
+    sW.push(W[k]);
+    sR.push(rng(), 0.03 + rng() * 0.11, rng(), rng());
+  }
+  const dustGeo = new THREE.BufferGeometry();
+  dustGeo.setAttribute('position', new THREE.Float32BufferAttribute(sP, 3));
+  dustGeo.setAttribute('normal', new THREE.Float32BufferAttribute(sD, 3));
+  dustGeo.setAttribute('aW', new THREE.Float32BufferAttribute(sW, 1));
+  dustGeo.setAttribute('aRnd', new THREE.Float32BufferAttribute(sR, 4));
+
+  // 7. Sparks: a small swarm where the veins converge at the bottom of the chest.
+  const core = sample(-0.58, 0);
+  const cP = [], cR = [];
+  for (let i = 0; i < 420; i++) {
+    const a = rng() * Math.PI * 2, r = Math.pow(rng(), 1.6) * 0.07;
+    cP.push(core.p[0] + Math.cos(a) * r, core.p[1] + (rng() - 0.5) * 0.06, core.p[2] + 0.01 + Math.abs(Math.sin(a) * r) * 0.5);
+    cR.push(rng(), 0.08 + rng() * 0.22, rng(), rng());
+  }
+  const coreGeo = new THREE.BufferGeometry();
+  coreGeo.setAttribute('position', new THREE.Float32BufferAttribute(cP, 3));
+  coreGeo.setAttribute('aRnd', new THREE.Float32BufferAttribute(cR, 4));
+
+  console.info(`[avatar] bust: ${nSeg} segments, ${dW.length} dots, ${sW.length} dust, ${veins.length} veins in ${(performance.now() - t0).toFixed(0)} ms`);
+  return { occGeo, lineGeo, dotGeo, veinGeo, nodeGeo, dustGeo, coreGeo };
+}
+
+/* =====================================================================
+   BUST materials
+   ===================================================================== */
+const CONTOUR_SHADE = /* glsl */`
+  // Shared look of the contour lines and their dots.
+  void shadeContour(vec3 rp, vec3 rn, vec3 nv, vec3 vd, float level, out vec3 col, out float alpha) {
+    float ndv = dot(nv, vd);
+    float rim = pow(clamp(1.0 - ndv, 0.0, 1.0), 3.0);
+    float head = smoothstep(0.20, 0.34, rp.y);
+    float lv = hash11(level * 1.37 + 0.5);
+    float key = clamp(dot(nv, normalize(vec3(-0.25, 0.55, 0.8))), 0.0, 1.0);
+    float I = (0.055 + 0.11 * key) * (0.6 + 0.8 * lv) + rim * 1.05;
+
+    // listening: a scan band sweeps up the body
+    float scanY = -0.9 + mod(uTime * 0.6, 2.4);
+    I += exp(-pow((rp.y - scanY) / 0.05, 2.0)) * uListen * (0.45 + 1.9 * uLevel);
+    // thinking: bright packets orbit the head
+    float ang = atan(rp.x, rp.z + 0.05);
+    I += pow(0.5 + 0.5 * sin(ang * 5.0 - uTime * 3.4 + level * 0.45), 10.0) * uThink * 1.3 * head;
+    I *= 1.0 + uThink * 0.25 * sin(uTime * 9.0 + level * 2.3);
+
+    vec3 cyan = vec3(0.05, 0.50, 1.0);
+    vec3 rimC = vec3(0.22, 0.80, 1.0);
+    vec3 orng = vec3(1.0, 0.30, 0.025);
+    vec3 c = mix(cyan, rimC, clamp(rim * 1.25, 0.0, 1.0)) * I;
+
+    float face = faceMask(rp, rn);
+    float glow = 0.78 + 0.12 * sin(uTime * 1.3) + uSpeak * uLevel * 1.5 + uThink * 0.25 * sin(uTime * 4.0) + uListen * 0.15;
+    c = mix(c, orng * (0.26 + 0.48 * glow) * (0.75 + 0.5 * lv), face);
+
+    // a few warm contour arcs around the sternum
+    float warm = (1.0 - head) * step(0.84, hash11(level * 3.1 + 7.0))
+               * smoothstep(0.14, 0.26, abs(rp.x)) * (1.0 - smoothstep(0.45, 0.62, abs(rp.x))) * smoothstep(-0.10, -0.24, rp.y);
+    c = mix(c, orng * (0.35 + 0.9 * I), warm * 0.8);
+
+    col = c;
+    alpha = smoothstep(-0.38, 0.06, ndv) * smoothstep(-0.88, -0.50, rp.y);
+  }
+
+  // Waves on the face, ripples from the mouth when speaking.
+  vec3 faceWaves(vec3 p, vec3 n, float level) {
+    float head = smoothstep(0.20, 0.34, p.y);
+    float face = faceMask(p, n);
+    float wv = sin(p.x * 23.0 + uTime * 1.25 + level * 0.9) * 0.55 + sin(p.x * 11.0 - uTime * 0.85 + level * 0.37) * 0.45;
+    float amp = head * (0.0026 + face * 0.0058) + uSpeak * uLevel * face * 0.012;
+    p.y += wv * amp;
+    vec2 m = p.xy - vec2(0.0, 0.383);
+    float md = length(m * vec2(1.0, 1.6));
+    p.y += sin(md * 70.0 - uTime * 16.0) * exp(-md * 9.0) * uSpeak * uLevel * smoothstep(0.1, 0.6, n.z) * head * 0.010;
+    return p;
+  }
+`;
+
+function makeBustMaterials() {
+  const additive = { uniforms: U, transparent: true, depthWrite: false, depthTest: true, blending: THREE.AdditiveBlending };
+
+  // Opaque inner skin: hides back lines and the landscape, adds a faint rim and the warm face glow.
+  const occluder = new THREE.ShaderMaterial({
+    uniforms: U,
+    vertexShader: GLSL_COMMON + /* glsl */`
+      attribute float aW;
+      varying float vRim;
+      varying float vFade;
+      varying vec3 vRest;
+      varying vec3 vRestN;
+      void main() {
+        vec3 n = normal;
+        vRest = position; vRestN = normal;
+        vec3 p = deform(position, aW, n);
+        vec4 mv = modelViewMatrix * vec4(p, 1.0);
+        vec3 nv = normalize(normalMatrix * n);
+        float ndv = clamp(dot(nv, normalize(-mv.xyz)), 0.0, 1.0);
+        vRim = pow(1.0 - ndv, 5.0);
+        vFade = smoothstep(-0.9, -0.5, position.y);
+        gl_Position = projectionMatrix * mv;
+      }`,
+    fragmentShader: GLSL_COMMON + /* glsl */`
+      uniform float uFaceGlow;
+      varying float vRim;
+      varying float vFade;
+      varying vec3 vRest;
+      varying vec3 vRestN;
+      void main() {
+        float face = faceMask(vRest, normalize(vRestN));
+        vec3 col = vec3(0.01, 0.11, 0.24) * vRim * vFade + vec3(1.0, 0.28, 0.025) * face * uFaceGlow;
+        gl_FragColor = vec4(col, 1.0);
+      }`,
+  });
+
+  const lines = new THREE.ShaderMaterial({
+    ...additive,
+    vertexShader: GLSL_COMMON + CONTOUR_SHADE + /* glsl */`
+      attribute float aW;
+      attribute float aLevel;
+      varying vec3 vCol;
+      varying float vA;
+      varying vec3 vRest;
+      void main() {
+        vec3 n = normal;
+        vec3 p = faceWaves(position, n, aLevel);
+        vRest = p;
+        p = deform(p, aW, n);
+        vec4 mv = modelViewMatrix * vec4(p, 1.0);
+        vec3 nv = normalize(normalMatrix * n);
+        vec3 col; float a;
+        shadeContour(position, normal, nv, normalize(-mv.xyz), aLevel, col, a);
+        float head = smoothstep(0.20, 0.34, position.y);
+        vCol = col;
+        vA = a * mix(0.34, 1.0, head);
+        gl_Position = projectionMatrix * mv;
+      }`,
+    fragmentShader: GLSL_COMMON + /* glsl */`
+      varying vec3 vCol;
+      varying float vA;
+      varying vec3 vRest;
+      void main() {
+        float top = smoothstep(0.90, 1.07, vRest.y);
+        if (hash13(floor(vRest * 150.0)) < top * 0.8) discard;
+        gl_FragColor = vec4(vCol, vA);
+      }`,
+  });
+
+  const dots = new THREE.ShaderMaterial({
+    ...additive,
+    vertexShader: GLSL_COMMON + CONTOUR_SHADE + /* glsl */`
+      attribute float aW;
+      attribute float aLevel;
+      attribute float aRnd;
+      varying vec3 vCol;
+      varying float vA;
+      void main() {
+        vec3 n = normal;
+        vec3 p = faceWaves(position, n, aLevel);
+        p = deform(p, aW, n);
+        vec4 mv = modelViewMatrix * vec4(p, 1.0);
+        vec3 nv = normalize(normalMatrix * n);
+        vec3 col; float a;
+        shadeContour(position, normal, nv, normalize(-mv.xyz), aLevel, col, a);
+        float head = smoothstep(0.20, 0.34, position.y);
+        float tw = 0.7 + 0.3 * sin(uTime * (1.0 + aRnd * 3.0) + aRnd * 60.0);
+        float spark = step(0.985, aRnd) * 1.6;
+        vCol = col * (0.95 + spark) * tw;
+        vA = a * mix(1.0, 0.42, head);
+        gl_PointSize = (1.25 + aRnd * 1.5 + spark) * uPR * (3.6 / max(-mv.z, 0.5));
+        gl_Position = projectionMatrix * mv;
+      }`,
+    fragmentShader: /* glsl */`
+      varying vec3 vCol;
+      varying float vA;
+      void main() {
+        float d = length(gl_PointCoord - 0.5) * 2.0;
+        if (d > 1.0) discard;
+        gl_FragColor = vec4(vCol, vA * (1.0 - d * d));
+      }`,
+  });
+
+  const veins = new THREE.ShaderMaterial({
+    ...additive,
+    vertexShader: GLSL_COMMON + /* glsl */`
+      attribute float aW;
+      attribute float aS;
+      attribute float aI;
+      attribute float aSeed;
+      varying vec3 vCol;
+      varying float vA;
+      void main() {
+        vec3 n = normal;
+        vec3 p = deform(position, aW, n);
+        vec4 mv = modelViewMatrix * vec4(p, 1.0);
+        float speed = 0.22 + uThink * 0.35 + uSpeak * uLevel * 0.9;
+        float f = fract(aS * 1.3 - uTime * speed + aSeed);
+        float pulse = smoothstep(0.78, 0.97, f) * (1.0 - smoothstep(0.97, 1.0, f));
+        float I = aI * (0.45 + 0.85 * pulse + uSpeak * uLevel * 0.9 + uThink * 0.2);
+        vCol = mix(vec3(1.0, 0.36, 0.05), vec3(1.0, 0.78, 0.40), pulse) * I;
+        vA = smoothstep(-0.9, -0.58, position.y) * smoothstep(0.17, 0.08, position.y);
+        gl_Position = projectionMatrix * mv;
+      }`,
+    fragmentShader: /* glsl */`
+      varying vec3 vCol;
+      varying float vA;
+      void main() { gl_FragColor = vec4(vCol, vA); }`,
+  });
+
+  const veinNodes = new THREE.ShaderMaterial({
+    ...additive,
+    vertexShader: GLSL_COMMON + /* glsl */`
+      attribute float aW;
+      attribute float aRnd;
+      varying vec3 vCol;
+      varying float vA;
+      void main() {
+        vec3 n = normal;
+        vec3 p = deform(position, aW, n);
+        vec4 mv = modelViewMatrix * vec4(p, 1.0);
+        float tw = 0.55 + 0.45 * sin(uTime * (1.5 + aRnd * 3.0) + aRnd * 30.0);
+        vCol = vec3(1.0, 0.62, 0.22) * (1.2 + uSpeak * uLevel * 1.5) * tw;
+        vA = smoothstep(-0.9, -0.58, position.y);
+        gl_PointSize = (2.4 + aRnd * 2.6) * uPR * (3.6 / max(-mv.z, 0.5));
+        gl_Position = projectionMatrix * mv;
+      }`,
+    fragmentShader: /* glsl */`
+      varying vec3 vCol;
+      varying float vA;
+      void main() {
+        float d = length(gl_PointCoord - 0.5) * 2.0;
+        if (d > 1.0) discard;
+        gl_FragColor = vec4(vCol, vA * pow(1.0 - d, 2.0));
+      }`,
+  });
+
+  const dust = new THREE.ShaderMaterial({
+    ...additive,
+    vertexShader: GLSL_COMMON + /* glsl */`
+      attribute float aW;
+      attribute vec4 aRnd; // phase, speed, drift, size
+      varying vec3 vCol;
+      varying float vA;
+      void main() {
+        float life = fract(uTime * aRnd.y * (1.0 + uThink * 1.4) + aRnd.x);
+        vec3 dir = normal;
+        vec3 base = position;
+        // the crown halo slowly turns, faster while thinking
+        float th = uSwirl * (0.4 + aRnd.w) * smoothstep(0.78, 1.0, base.y);
+        float cs = cos(th), sn = sin(th);
+        vec3 q = base - vec3(0.0, 0.0, -0.03);
+        base = vec3(cs * q.x + sn * q.z, q.y, -sn * q.x + cs * q.z) + vec3(0.0, 0.0, -0.03);
+        dir = vec3(cs * dir.x + sn * dir.z, dir.y, -sn * dir.x + cs * dir.z);
+        float out1 = life * 0.05 * (1.0 + uThink * 0.6) * (1.0 - uListen * 0.85) - uListen * 0.025 * aRnd.z;
+        vec3 p = base + dir * out1;
+        p += vec3(sin(uTime * 0.7 + aRnd.x * 40.0), cos(uTime * 0.6 + aRnd.y * 33.0), sin(uTime * 0.5 + aRnd.z * 21.0)) * 0.006;
+        vec3 n = dir;
+        p = deform(p, aW, n);
+        vec4 mv = modelViewMatrix * vec4(p, 1.0);
+        float a = pow(sin(life * 3.14159), 1.3);
+        float hot = step(0.93, aRnd.w);
+        vCol = mix(vec3(0.10, 0.62, 0.85), vec3(0.75, 0.95, 1.0), hot * 0.8 + aRnd.z * 0.15) * (1.0 + uListen * 0.6);
+        vA = a * (0.32 + 0.68 * aRnd.w) * smoothstep(-0.85, -0.5, position.y);
+        gl_PointSize = (1.0 + aRnd.w * 2.7) * uPR * (3.6 / max(-mv.z, 0.5));
+        gl_Position = projectionMatrix * mv;
+      }`,
+    fragmentShader: /* glsl */`
+      varying vec3 vCol;
+      varying float vA;
+      void main() {
+        float d = length(gl_PointCoord - 0.5) * 2.0;
+        if (d > 1.0) discard;
+        gl_FragColor = vec4(vCol, vA * (1.0 - d * d));
+      }`,
+  });
+
+  const sparks = new THREE.ShaderMaterial({
+    ...additive,
+    vertexShader: GLSL_COMMON + /* glsl */`
+      attribute vec4 aRnd;
+      varying vec3 vCol;
+      varying float vA;
+      void main() {
+        float life = fract(uTime * aRnd.y * (1.0 + uSpeak * uLevel * 2.0) + aRnd.x);
+        vec3 p = position + vec3((aRnd.z - 0.5) * 0.05 * life, life * 0.09, 0.0);
+        vec4 mv = modelViewMatrix * vec4(p, 1.0);
+        vCol = mix(vec3(0.3, 0.85, 1.0), vec3(1.0, 1.0, 1.0), step(0.7, aRnd.w));
+        vA = sin(life * 3.14159) * (0.5 + 0.5 * aRnd.w);
+        gl_PointSize = (1.2 + aRnd.w * 2.2) * uPR * (3.6 / max(-mv.z, 0.5));
+        gl_Position = projectionMatrix * mv;
+      }`,
+    fragmentShader: /* glsl */`
+      varying vec3 vCol;
+      varying float vA;
+      void main() {
+        float d = length(gl_PointCoord - 0.5) * 2.0;
+        if (d > 1.0) discard;
+        gl_FragColor = vec4(vCol, vA * (1.0 - d));
+      }`,
+  });
+
+  return { occluder, lines, dots, veins, veinNodes, dust, sparks };
+}
+
+/* =====================================================================
+   LANDSCAPE: ridged particle mountains with flowing orange veins
+   ===================================================================== */
+function buildTerrain() {
+  const t0 = performance.now();
+  const S = Q.tStep, X0 = -9.8, X1 = 9.8, Z0 = -15, Z1 = 2.9;
+  const nx = Math.floor((X1 - X0) / S) + 1, nz = Math.floor((Z1 - Z0) / S) + 1, NC = nx * nz;
+  const X = new Float32Array(NC), Y = new Float32Array(NC), Z = new Float32Array(NC), M = new Float32Array(NC);
+
+  const ridged = (x, z) => {
+    let sum = 0, amp = 0.5, freq = 1, prev = 1, norm = 0;
+    for (let o = 0; o < 4; o++) {
+      let n = 1 - Math.abs(noise(x * freq, z * freq));
+      n *= n;
+      sum += n * amp * prev; norm += amp; prev = n;
+      freq *= 2.03; amp *= 0.5;
+    }
+    return sum / norm;
+  };
+  // Hand placed massifs so the ranges frame the bust like the concept art: x, z, radiusX, radiusZ, height
+  const MASSIFS = [
+    [-3.7, -6.6, 2.2, 2.0, 2.10], [-5.7, -5.0, 1.8, 1.7, 1.55], [-1.9, -4.4, 1.3, 1.5, 1.25],
+    [-7.6, -9.6, 2.6, 2.4, 1.90], [-2.7, -1.0, 1.3, 0.9, 0.75], [-0.9, -10.5, 1.6, 1.5, 1.20],
+    [3.5, -6.1, 2.0, 1.9, 1.85], [5.7, -8.2, 2.0, 2.0, 1.90], [1.8, -4.2, 1.3, 1.4, 1.10],
+    [7.9, -6.0, 2.2, 2.0, 1.60], [2.8, -1.2, 1.4, 1.0, 0.60], [1.2, -11.5, 1.8, 1.6, 1.30],
+    [-0.95, -7.4, 1.3, 1.3, 1.25], [0.95, -7.8, 1.3, 1.3, 1.20],
+  ];
+  const heightAt = (x, z) => {
+    const wx = x + noise(x * 0.31 + 5.1, z * 0.31 - 2.7) * 0.55;
+    const wz = z + noise(x * 0.31 - 7.7, z * 0.31 + 4.4) * 0.55;
+    let m = 0;
+    for (const [cx, cz, rx, rz, h] of MASSIFS) {
+      const dx = (wx - cx) / rx, dz = (wz - cz) / rz;
+      const d = Math.sqrt(dx * dx + dz * dz);
+      if (d < 1) m = Math.max(m, h * Math.pow(1 - d, 1.55));
+    }
+    const r = ridged(x * 0.42 + 7.3, z * 0.42 + 1.7);
+    const hills = noise(x * 0.55 + 3.1, z * 0.55 - 8.2) * 0.07 + noise(x * 1.7, z * 1.7) * 0.02;
+    return [-1.0 + hills + m * 1.42 * (0.52 + 0.62 * r), m];
+  };
+  for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) {
+    const k = j * nx + i;
+    const x = X0 + i * S + (rng() - 0.5) * S * 0.75, z = Z0 + j * S + (rng() - 0.5) * S * 0.75;
+    const [y, m] = heightAt(x, z);
+    X[k] = x; Y[k] = y; Z[k] = z; M[k] = clamp(m / 1.1, 0, 1);
+  }
+
+  // Orange veins: long channels that meander diagonally down the camera facing slopes.
+  const mvP = [], mvS = [], mvB = [];
+  const beadP = [], beadB = [], beadR = [], beadK = [];
+  const growVein = (x, z, side, len, inten, depth, s) => {
+    const ph = rng() * 100;
+    let hx = 0, hz = 0, prev = null;
+    const step = 0.03;
+    while (len > 0) {
+      const [y, m] = heightAt(x, z);
+      if (m < 0.04 || x < X0 || x > X1 || z < Z0 || z > Z1) break;
+      const p = [x, y + 0.006, z];
+      if (prev) { mvP.push(...prev, ...p); mvS.push(s - step, s); mvB.push(inten, inten); }
+      if (rng() < 0.45) { beadP.push(...p); beadB.push(inten * (0.6 + rng() * 0.4)); beadR.push(rng()); beadK.push(rng() < 0.05 ? 2 : 3); }
+      prev = p;
+      const e = 0.03;
+      const gx = (heightAt(x + e, z)[0] - heightAt(x - e, z)[0]) / (2 * e);
+      const gz = (heightAt(x, z + e)[0] - heightAt(x, z - e)[0]) / (2 * e);
+      const gl = Math.hypot(gx, gz) || 1;
+      const ang = side * 0.8 + noise(ph, s * 0.9) * 0.8;
+      const c = Math.cos(ang), sn = Math.sin(ang);
+      let dx = (-gx / gl) * c - (-gz / gl) * sn, dz = (-gx / gl) * sn + (-gz / gl) * c;
+      if (prev && (hx || hz)) { dx = hx * 0.82 + dx * 0.18; dz = hz * 0.82 + dz * 0.18; const l = Math.hypot(dx, dz) || 1; dx /= l; dz /= l; }
+      hx = dx; hz = dz;
+      x += dx * step; z += dz * step; s += step; len -= step;
+      if (depth < 2 && rng() < 0.018) growVein(x, z, -side, len * (0.25 + rng() * 0.35), inten * 0.6, depth + 1, s);
+    }
+  };
+  for (const [cx, cz, rx, rz, h] of MASSIFS) {
+    if (h < 0.55) continue;
+    const n = h > 1.5 ? 2 : 1;
+    for (let v = 0; v < n; v++) {
+      const sx = cx + (rng() - 0.5) * rx * 0.9, sz = cz + rz * (0.1 + rng() * 0.35);
+      growVein(sx, sz, rng() < 0.5 ? -1 : 1, 3.0 + rng() * 3.0, 0.75 + rng() * 0.35, 0, rng() * 10);
+    }
+  }
+
+  // Flow accumulation: rivers on the terrain, ridges on the inverted terrain.
+  const down = new Int32Array(NC).fill(-1), up = new Int32Array(NC).fill(-1);
+  for (let k = 0; k < NC; k++) {
+    const i = k % nx, j = (k / nx) | 0;
+    let bd = 0, bu = 0;
+    for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) {
+      if (!di && !dj) continue;
+      const ii = i + di, jj = j + dj;
+      if (ii < 0 || jj < 0 || ii >= nx || jj >= nz) continue;
+      const kk = jj * nx + ii, dist = di && dj ? 1.4142 : 1;
+      const sD = (Y[k] - Y[kk]) / dist, sU = -sD;
+      if (sD > bd) { bd = sD; down[k] = kk; }
+      if (sU > bu) { bu = sU; up[k] = kk; }
+    }
+  }
+  const order = Array.from({ length: NC }, (_, k) => k).sort((a, b) => Y[b] - Y[a]);
+  const flowD = new Float32Array(NC).fill(1), flowU = new Float32Array(NC).fill(1), distD = new Float32Array(NC);
+  for (const k of order) {
+    const d = down[k];
+    if (d >= 0) {
+      flowD[d] += flowD[k];
+      const dx = X[d] - X[k], dy = Y[d] - Y[k], dz = Z[d] - Z[k];
+      distD[d] = Math.max(distD[d], distD[k] + Math.sqrt(dx * dx + dy * dy + dz * dz));
+    }
+  }
+  for (let o = NC - 1; o >= 0; o--) { const k = order[o]; if (up[k] >= 0) flowU[up[k]] += flowU[k]; }
+
+  const ridgeB = new Float32Array(NC);
+  const lr0 = Math.log(8), lr1 = Math.log(2400);
+  for (let k = 0; k < NC; k++) ridgeB[k] = clamp((Math.log(flowU[k]) - lr0) / (lr1 - lr0), 0, 1) * smoothstep(0.05, 0.35, M[k]);
+
+  // Points
+  const pP = new Float32Array(NC * 3), pB = new Float32Array(NC), pR = new Float32Array(NC), pK = new Float32Array(NC);
+  for (let k = 0; k < NC; k++) {
+    pP[k * 3] = X[k]; pP[k * 3 + 1] = Y[k] + 0.002; pP[k * 3 + 2] = Z[k];
+    const height = smoothstep(-0.9, 0.7, Y[k]);
+    pB[k] = clamp(0.04 + 0.1 * M[k] + 0.72 * ridgeB[k] + 0.22 * height * M[k] + (rng() - 0.5) * 0.08, 0, 1);
+    pR[k] = rng();
+    if (flowU[k] > 22 && M[k] > 0.3 && rng() < 0.11) pK[k] = 1;
+    else if (flowD[k] > 160 && M[k] > 0.1 && rng() < 0.35) {
+      pK[k] = 3;
+      pB[k] = 0.15 * clamp((Math.log(flowD[k]) - Math.log(160)) / (Math.log(2500) - Math.log(160)), 0, 1);
+    }
+  }
+  const pointGeo = new THREE.BufferGeometry();
+  pointGeo.setAttribute('position', new THREE.Float32BufferAttribute([...pP, ...beadP], 3));
+  pointGeo.setAttribute('aB', new THREE.Float32BufferAttribute([...pB, ...beadB], 1));
+  pointGeo.setAttribute('aR', new THREE.Float32BufferAttribute([...pR, ...beadR], 1));
+  pointGeo.setAttribute('aK', new THREE.Float32BufferAttribute([...pK, ...beadK], 1));
+
+  // Lines: faint mesh, bright ridges, orange rivers
+  const lP = [], lB = [], lK = [], lS = [];
+  const pushEdge = (a, b, br, kind, sa = 0, sb = 0, lift = 0.003) => {
+    lP.push(X[a], Y[a] + lift, Z[a], X[b], Y[b] + lift, Z[b]);
+    lB.push(br, br); lK.push(kind, kind); lS.push(sa, sb);
+  };
+  for (let j = 0; j < nz - 1; j++) for (let i = 0; i < nx - 1; i++) {
+    const k = j * nx + i;
+    if (M[k] < 0.03 && Z[k] < -2.5) continue;
+    const nbs = [k + 1, k + nx, (i + j) % 2 ? k + nx + 1 : k + nx - 1];
+    for (const n of nbs) {
+      if (n < 0 || n >= NC || rng() > 0.5) continue;
+      const rb = (ridgeB[k] + ridgeB[n]) * 0.5;
+      const ex = X[n] - X[k], ey = Y[n] - Y[k], ez = Z[n] - Z[k];
+      const steep = Math.abs(ey) / (Math.sqrt(ex * ex + ey * ey + ez * ez) || 1);
+      pushEdge(k, n, 0.015 + 0.13 * Math.pow(steep, 1.4) * M[k] + 0.12 * rb, 0);
+    }
+  }
+  for (let k = 0; k < NC; k++) {
+    const u = up[k];
+    if (u >= 0 && flowU[k] > 24 && M[k] > 0.1) pushEdge(k, u, 0.18 + 0.85 * ridgeB[k], 1, 0, 0, 0.004);
+
+  }
+  for (let i = 0; i < mvB.length; i++) { lP.push(mvP[i * 3], mvP[i * 3 + 1], mvP[i * 3 + 2]); lB.push(0.5 + 0.8 * mvB[i]); lK.push(2); lS.push(mvS[i]); }
+  const lineGeo = new THREE.BufferGeometry();
+  lineGeo.setAttribute('position', new THREE.Float32BufferAttribute(lP, 3));
+  lineGeo.setAttribute('aB', new THREE.Float32BufferAttribute(lB, 1));
+  lineGeo.setAttribute('aK', new THREE.Float32BufferAttribute(lK, 1));
+  lineGeo.setAttribute('aS', new THREE.Float32BufferAttribute(lS, 1));
+
+  // Solid dark surface: lets near ranges hide far ones, and hides sky dust behind peaks.
+  const surfIdx = [];
+  for (let j = 0; j < nz - 1; j++) for (let i = 0; i < nx - 1; i++) {
+    const a = j * nx + i, b = a + 1, c = a + nx, d = c + 1;
+    surfIdx.push(a, c, b, b, c, d);
+  }
+  const surfPos = new Float32Array(NC * 3);
+  for (let k = 0; k < NC; k++) { surfPos[k * 3] = X[k]; surfPos[k * 3 + 1] = Y[k] - 0.004; surfPos[k * 3 + 2] = Z[k]; }
+  const surfGeo = new THREE.BufferGeometry();
+  surfGeo.setAttribute('position', new THREE.BufferAttribute(surfPos, 3));
+  surfGeo.setIndex(surfIdx);
+
+  // Sky dust: a mist of fine particles hugging the ranges.
+  const skyP = [], skyR = [];
+  for (let i = 0; i < Q.sky; i++) {
+    const k = (rng() * NC) | 0;
+    const lift = Math.pow(rng(), 2.2) * 2.6;
+    skyP.push(X[k] + (rng() - 0.5) * 0.3, Y[k] + 0.03 + lift, Z[k] + (rng() - 0.5) * 0.3);
+    skyR.push(rng());
+  }
+  for (let i = 0; i < 700; i++) {
+    const a = rng() * Math.PI * 2, e = 0.05 + rng() * 0.9;
+    skyP.push(Math.cos(a) * 40 * Math.cos(e), 2 + Math.sin(e) * 26, -18 - Math.abs(Math.sin(a)) * 20);
+    skyR.push(rng());
+  }
+  const skyGeo = new THREE.BufferGeometry();
+  skyGeo.setAttribute('position', new THREE.Float32BufferAttribute(skyP, 3));
+  skyGeo.setAttribute('aR', new THREE.Float32BufferAttribute(skyR, 1));
+
+  // Bokeh: large out of focus lights in the lower corners. Positions are set by placeBokeh() once the camera is known.
+  const bR = [], bN = [];
+  for (let i = 0; i < 12; i++) {
+    const side = i % 2 ? 1 : -1;
+    bN.push(side * (0.55 + rng() * 0.47), -(0.5 + Math.pow(rng(), 0.7) * 0.5), 1.6 + rng() * 0.9);
+    bR.push(rng());
+  }
+  const bokehGeo = new THREE.BufferGeometry();
+  bokehGeo.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(bN.length), 3));
+  bokehGeo.setAttribute('aR', new THREE.Float32BufferAttribute(bR, 1));
+  bokehGeo.userData.ndc = bN;
+
+  console.info(`[avatar] terrain: ${NC} points, ${lB.length / 2} edges, ${mvB.length / 2} vein segments in ${(performance.now() - t0).toFixed(0)} ms`);
+  return { pointGeo, lineGeo, surfGeo, skyGeo, bokehGeo };
+}
+
+function makeTerrainMaterials() {
+  const additive = { uniforms: U, transparent: true, depthWrite: false, depthTest: true, blending: THREE.AdditiveBlending };
+  const FOG = /* glsl */`
+    float fogOf(float dist) { return exp(-max(dist - 5.0, 0.0) * 0.085); }
+    float sweepOf(vec3 p) {
+      float rr = length(p.xz - vec2(0.0, -0.5));
+      return uThink * exp(-pow((rr - mod(uTime * 3.0, 15.0)) / 0.4, 2.0));
+    }
+    float rippleOf(vec3 p) {
+      float rr = length(p.xz - vec2(0.0, -0.5));
+      return (uListen + uSpeak) * uLevel * pow(0.5 + 0.5 * sin(rr * 2.6 - uTime * 4.5), 10.0) * exp(-rr * 0.10);
+    }
+  `;
+
+  const surface = new THREE.ShaderMaterial({
+    uniforms: U,
+    polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 2,
+    vertexShader: `void main() { gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+    fragmentShader: `void main() { gl_FragColor = vec4(0.0002, 0.0006, 0.0012, 1.0); }`,
+  });
+
+  const points = new THREE.ShaderMaterial({
+    ...additive,
+    vertexShader: GLSL_COMMON + FOG + /* glsl */`
+      attribute float aB;
+      attribute float aR;
+      attribute float aK;
+      varying vec3 vCol;
+      varying float vA;
+      varying float vK;
+      void main() {
+        vec4 mv = modelViewMatrix * vec4(position, 1.0);
+        float dist = -mv.z;
+        float tw = 0.6 + 0.4 * sin(uTime * (0.7 + aR * 2.3) + aR * 50.0);
+        vec3 col; float size; float a;
+        if (aK < 0.5) {
+          col = mix(vec3(0.05, 0.26, 0.85), vec3(0.25, 0.80, 1.0), aB);
+          size = 0.013 + 0.014 * aB;
+          a = (0.05 + 0.95 * aB) * tw;
+        } else if (aK < 1.5) {
+          col = vec3(0.72, 0.95, 1.0); size = 0.05; a = 1.3 * tw;
+        } else if (aK < 2.5) {
+          col = vec3(1.0, 0.58, 0.18); size = 0.034; a = 1.3 * tw * (1.0 + uSpeak * uLevel);
+        } else {
+          col = vec3(1.0, 0.45, 0.08); size = 0.007 + 0.006 * aB; a = (0.35 + 0.6 * aB) * (0.8 + 0.2 * tw) * (1.0 + uSpeak * uLevel * 0.8);
+        }
+        a += (sweepOf(position) * 1.2 + rippleOf(position)) * (aK < 0.5 ? 1.0 : 0.3);
+        vCol = col; vA = a * fogOf(dist); vK = aK;
+        gl_PointSize = clamp(size * uScale / dist, 1.0, 40.0);
+        gl_Position = projectionMatrix * mv;
+      }`,
+    fragmentShader: /* glsl */`
+      varying vec3 vCol;
+      varying float vA;
+      varying float vK;
+      void main() {
+        float d = length(gl_PointCoord - 0.5) * 2.0;
+        if (d > 1.0) discard;
+        float a = (vK < 0.5 || vK > 2.5) ? (1.0 - d * d) : (pow(1.0 - d, 4.0) * 1.6 + pow(1.0 - d, 1.5) * 0.25);
+        gl_FragColor = vec4(vCol, vA * a);
+      }`,
+  });
+
+  const lines = new THREE.ShaderMaterial({
+    ...additive,
+    vertexShader: GLSL_COMMON + FOG + /* glsl */`
+      attribute float aB;
+      attribute float aK;
+      attribute float aS;
+      varying vec3 vCol;
+      varying float vA;
+      void main() {
+        vec4 mv = modelViewMatrix * vec4(position, 1.0);
+        float dist = -mv.z;
+        vec3 col; float a = aB;
+        if (aK < 0.5) col = vec3(0.10, 0.42, 0.95);
+        else if (aK < 1.5) col = vec3(0.30, 0.82, 1.0);
+        else {
+          float f = fract(aS * 0.9 - uTime * (0.16 + uSpeak * uLevel * 0.5 + uThink * 0.2));
+          float pulse = smoothstep(0.82, 0.98, f) * (1.0 - smoothstep(0.98, 1.0, f));
+          col = mix(vec3(1.0, 0.40, 0.06), vec3(1.0, 0.80, 0.45), pulse);
+          a *= 0.8 + 1.6 * pulse + uSpeak * uLevel * 0.8;
+        }
+        a += aB * 2.0 * sweepOf(position);
+        vCol = col; vA = a * fogOf(dist);
+        gl_Position = projectionMatrix * mv;
+      }`,
+    fragmentShader: /* glsl */`
+      varying vec3 vCol;
+      varying float vA;
+      void main() { gl_FragColor = vec4(vCol, vA); }`,
+  });
+
+  const sky = new THREE.ShaderMaterial({
+    ...additive,
+    vertexShader: GLSL_COMMON + /* glsl */`
+      attribute float aR;
+      varying float vA;
+      void main() {
+        vec4 mv = modelViewMatrix * vec4(position, 1.0);
+        float dist = -mv.z;
+        vA = (0.12 + 0.35 * aR) * (0.55 + 0.45 * sin(uTime * (0.4 + aR) + aR * 70.0)) * exp(-max(dist - 6.0, 0.0) * 0.05);
+        gl_PointSize = (0.9 + aR * 1.1) * uPR;
+        gl_Position = projectionMatrix * mv;
+      }`,
+    fragmentShader: /* glsl */`
+      varying float vA;
+      void main() {
+        float d = length(gl_PointCoord - 0.5) * 2.0;
+        if (d > 1.0) discard;
+        gl_FragColor = vec4(vec3(0.25, 0.70, 0.95), vA * (1.0 - d));
+      }`,
+  });
+
+  const bokeh = new THREE.ShaderMaterial({
+    ...additive,
+    depthTest: false,
+    vertexShader: GLSL_COMMON + /* glsl */`
+      attribute float aR;
+      varying vec3 vCol;
+      varying float vA;
+      void main() {
+        vec4 mv = modelViewMatrix * vec4(position, 1.0);
+        vCol = aR < 0.8 ? vec3(1.0, 0.5, 0.12) : vec3(0.25, 0.75, 1.0);
+        vA = (0.07 + 0.13 * aR) * (0.75 + 0.25 * sin(uTime * 0.5 + aR * 20.0));
+        gl_PointSize = (12.0 + aR * 30.0) * uPR;
+        gl_Position = projectionMatrix * mv;
+      }`,
+    fragmentShader: /* glsl */`
+      varying vec3 vCol;
+      varying float vA;
+      void main() {
+        float d = length(gl_PointCoord - 0.5) * 2.0;
+        if (d > 1.0) discard;
+        float a = smoothstep(1.0, 0.55, d) * 0.55 + smoothstep(1.0, 0.0, d) * 0.45;
+        gl_FragColor = vec4(vCol, vA * a);
+      }`,
+  });
+
+  return { surface, points, lines, sky, bokeh };
+}
+
+/* =====================================================================
+   Assemble the scene
+   ===================================================================== */
+const bustData = buildBust();
+const bustMat = makeBustMaterials();
+const bust = new THREE.Group();
+scene.add(bust);
+
+const occluderMesh = new THREE.Mesh(bustData.occGeo, bustMat.occluder);
+occluderMesh.renderOrder = -2;
+const contourLines = new THREE.LineSegments(bustData.lineGeo, bustMat.lines);
+const contourDots = new THREE.Points(bustData.dotGeo, bustMat.dots);
+const veinLines = new THREE.LineSegments(bustData.veinGeo, bustMat.veins);
+const veinDots = new THREE.Points(bustData.nodeGeo, bustMat.veinNodes);
+const dust = new THREE.Points(bustData.dustGeo, bustMat.dust);
+const sparks = new THREE.Points(bustData.coreGeo, bustMat.sparks);
+for (const o of [occluderMesh, contourLines, contourDots, veinLines, veinDots, dust, sparks]) {
+  o.frustumCulled = false;
+  bust.add(o);
+}
+
+const terrainData = buildTerrain();
+const terrainMat = makeTerrainMaterials();
+const terrain = new THREE.Group();
+scene.add(terrain);
+const tSurface = new THREE.Mesh(terrainData.surfGeo, terrainMat.surface);
+tSurface.renderOrder = -1;
+const tLines = new THREE.LineSegments(terrainData.lineGeo, terrainMat.lines);
+const tPoints = new THREE.Points(terrainData.pointGeo, terrainMat.points);
+const tSky = new THREE.Points(terrainData.skyGeo, terrainMat.sky);
+const tBokeh = new THREE.Points(terrainData.bokehGeo, terrainMat.bokeh);
+for (const o of [tSurface, tLines, tPoints, tSky, tBokeh]) { o.frustumCulled = false; terrain.add(o); }
+
+/* =====================================================================
+   Post processing: bloom, then glitch slices, vignette and grain
+   ===================================================================== */
+const rt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 });
+const composer = new EffectComposer(renderer, rt);
+composer.addPass(new RenderPass(scene, camera));
+const bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), CONFIG.bloom.strength, CONFIG.bloom.radius, CONFIG.bloom.threshold);
+// Keep the glow tight: damp the widest blur levels so the sky stays black.
+bloom.compositeMaterial.uniforms.bloomFactors.value = [1.0, 0.7, 0.32, 0.1, 0.03];
+composer.addPass(bloom);
+composer.addPass(new OutputPass());
+
+const bandVecs = Array.from({ length: 4 }, () => new THREE.Vector4());
+const bandXVecs = Array.from({ length: 4 }, () => new THREE.Vector4());
+const finalMat = new THREE.ShaderMaterial({
+  uniforms: {
+    tDiffuse: { value: null },
+    uTime: U.uTime,
+    uRes: { value: new THREE.Vector2(1, 1) },
+    uBand: { value: bandVecs },
+    uBandX: { value: bandXVecs },
+    uGrain: { value: 0.028 },
+    uVig: { value: 0.42 },
+    uAwake: { value: 1 },
+  },
+  vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+  fragmentShader: /* glsl */`
+    uniform sampler2D tDiffuse;
+    uniform float uTime;
+    uniform vec2 uRes;
+    uniform vec4 uBand[4];
+    uniform vec4 uBandX[4];
+    uniform float uGrain;
+    uniform float uVig;
+    uniform float uAwake;
+    varying vec2 vUv;
+    float hash12(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
+    void main() {
+      vec2 uv = vUv;
+      float dark = 0.0, split = 0.0;
+      for (int i = 0; i < 4; i++) {
+        vec4 b = uBand[i];
+        vec4 bx = uBandX[i];
+        if (bx.z > 0.5 && uv.y > b.x && uv.y < b.y && uv.x > bx.x && uv.x < bx.y) {
+          uv.x += b.z; dark = max(dark, b.w); split = max(split, bx.w);
+        }
+      }
+      vec3 col = texture2D(tDiffuse, uv).rgb;
+      col = max(col - 0.018, 0.0) / 0.982;   // deep blacks
+      if (split > 0.0) {
+        col.r = texture2D(tDiffuse, uv + vec2(split, 0.0)).r;
+        col.b = texture2D(tDiffuse, uv - vec2(split, 0.0)).b;
+      }
+      col *= 1.0 - dark;
+      vec2 q = vUv - 0.5; q.x *= uRes.x / uRes.y;
+      col *= 1.0 - uVig * smoothstep(0.38, 1.1, length(q));
+      col += (hash12(vUv * uRes + fract(uTime * 7.13) * 911.0) - 0.5) * uGrain;
+      col *= mix(0.1, 1.0, uAwake);
+      gl_FragColor = vec4(max(col, 0.0), 1.0);
+    }`,
+});
+const finalPass = new ShaderPass(finalMat);
+composer.addPass(finalPass);
+
+/* =====================================================================
+   Layout: fit the bust to any screen
+   ===================================================================== */
+let viewW = 1, viewH = 1, pixelRatio = Math.min(window.devicePixelRatio || 1, CONFIG.maxPixelRatio);
+function layout() {
+  viewW = window.innerWidth; viewH = window.innerHeight;
+  const aspect = viewW / viewH;
+  camera.aspect = aspect;
+  const tanV = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
+  const dV = 0.945 / tanV;               // fits crown to chest vertically
+  const dH = 0.78 / (tanV * aspect);     // keeps the shoulders on narrow screens
+  const d = Math.max(dV, dH);
+  camBase.set(0, 0.5, d);
+  camera.updateProjectionMatrix();
+  renderer.setPixelRatio(pixelRatio);
+  renderer.setSize(viewW, viewH, false);
+  composer.setPixelRatio(pixelRatio);
+  composer.setSize(viewW, viewH);
+  bloom.setSize(viewW * pixelRatio, viewH * pixelRatio);
+  finalMat.uniforms.uRes.value.set(viewW * pixelRatio, viewH * pixelRatio);
+  U.uPR.value = pixelRatio;
+  U.uScale.value = (viewH * pixelRatio) / (2 * tanV);
+}
+function placeBokeh() {
+  const ndcs = terrainData.bokehGeo.userData.ndc, pos = terrainData.bokehGeo.attributes.position;
+  camera.position.copy(camBase); camera.lookAt(camTarget); camera.updateMatrixWorld();
+  const v = new THREE.Vector3();
+  for (let i = 0; i < pos.count; i++) {
+    v.set(ndcs[i * 3], ndcs[i * 3 + 1], 0.5).unproject(camera).sub(camera.position).normalize();
+    v.multiplyScalar(ndcs[i * 3 + 2]).add(camera.position);
+    pos.setXYZ(i, v.x, v.y, v.z);
+  }
+  pos.needsUpdate = true;
+}
+window.addEventListener('resize', () => { layout(); placeBokeh(); });
+layout();
+placeBokeh();
+
+/* =====================================================================
+   Gaze: the head follows the cursor (or anything you feed to lookAt)
+   ===================================================================== */
+const pointer = { x: 0, y: 0, inside: false, sx: 0, sy: 0 };
+const external = { on: false, x: 0, y: 0, at: 0 };
+window.addEventListener('pointermove', (e) => {
+  pointer.x = (e.clientX / viewW) * 2 - 1;
+  pointer.y = -((e.clientY / viewH) * 2 - 1);
+  pointer.inside = true;
+});
+document.documentElement.addEventListener('pointerleave', () => { pointer.inside = false; });
+window.addEventListener('blur', () => { pointer.inside = false; });
+canvas.addEventListener('pointerup', (e) => { if (e.pointerType === 'touch') pointer.inside = false; });
+
+const head = { yaw: 0, pitch: 0, vy: 0, vp: 0 };
+const ray = new THREE.Raycaster();
+const ndc = new THREE.Vector2();
+const lookPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), -1.45);
+const hit = new THREE.Vector3();
+
+function gazeTarget(t) {
+  let gx, gy;
+  if (external.on && performance.now() - external.at < 1500) { gx = external.x; gy = external.y; }
+  else if (pointer.inside) { gx = pointer.x; gy = pointer.y; }
+  else { gx = noise(t * 0.07, 3.1) * 0.45; gy = noise(t * 0.06, 8.7) * 0.25 + 0.05; }
+  // tiny saccades keep it alive even when the cursor rests
+  gx += noise(t * 0.9, 1.7) * 0.012; gy += noise(t * 0.8, 5.3) * 0.010;
+  ndc.set(gx, gy);
+  ray.setFromCamera(ndc, camera);
+  if (!ray.ray.intersectPlane(lookPlane, hit)) return { yaw: 0, pitch: 0 };
+  const hx = hit.x, hy = hit.y - 0.55, hz = hit.z - 0.05;
+  const g = CONFIG.gaze;
+  return {
+    yaw: clamp(Math.atan2(hx, hz), -g.maxYaw, g.maxYaw),
+    pitch: clamp(Math.atan2(-hy, Math.hypot(hx, hz)), -g.maxPitchUp, g.maxPitchDown),
+  };
+}
+
+function stepHead(dt, t) {
+  const tg = gazeTarget(t), g = CONFIG.gaze;
+  const steps = Math.ceil(dt / (1 / 120));
+  const h = dt / steps;
+  for (let s = 0; s < steps; s++) {
+    head.vy += (g.stiffness * (tg.yaw - head.yaw) - g.damping * head.vy) * h;
+    head.vp += (g.stiffness * (tg.pitch - head.pitch) - g.damping * head.vp) * h;
+    head.yaw += head.vy * h;
+    head.pitch += head.vp * h;
+  }
+  const roll = -head.yaw * 0.07 + noise(t * 0.2, 9.1) * 0.012;
+  U.uHeadRot.value.set(head.yaw, head.pitch, roll);
+}
+
+/* =====================================================================
+   Audio: mic input level, assistant voice level, small UI sounds
+   ===================================================================== */
+let audioCtx = null;
+const getCtx = () => (audioCtx ??= new (window.AudioContext || window.webkitAudioContext)());
+const rms = (an, buf) => { an.getFloatTimeDomainData(buf); let s = 0; for (let i = 0; i < buf.length; i++) s += buf[i] * buf[i]; return Math.sqrt(s / buf.length); };
+
+const mic = { on: false, stream: null, src: null, analyser: null, buf: null };
+const voice = { analyser: null, buf: null, node: null, el: null, manual: 0, manualAt: -1e9 };
+
+const sfx = {
+  on: true,
+  blip(freq, dur = 0.06, vol = 0.03, delay = 0) {
+    if (!this.on || !(navigator.userActivation?.hasBeenActive ?? true)) return;
+    const ctx = getCtx();
+    if (ctx.state === 'suspended') ctx.resume();
+    const t0 = ctx.currentTime + delay;
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.type = 'sine'; o.frequency.setValueAtTime(freq, t0);
+    g.gain.setValueAtTime(0, t0);
+    g.gain.linearRampToValueAtTime(vol, t0 + 0.006);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    o.connect(g).connect(ctx.destination);
+    o.start(t0); o.stop(t0 + dur + 0.03);
+  },
+  click() { this.blip(1850, 0.035, 0.018); },
+  state(s) {
+    const f = { idle: [560, 420], listening: [660, 990], thinking: [700, 760], speaking: [880, 1175] }[s];
+    if (!f) return;
+    this.blip(f[0], 0.08, 0.025); this.blip(f[1], 0.1, 0.022, 0.075);
+  },
+};
+
+const hash1 = (n) => { const s = Math.sin(n * 127.1) * 43758.5453; return s - Math.floor(s); };
+function simulatedSpeech(t) {
+  const syl = t * 4.2, i = Math.floor(syl), f = syl - i;
+  const pause = hash1(Math.floor(t * 0.85) + 17) > 0.8 ? 0.12 : 1;
+  return clamp((0.35 + 0.65 * hash1(i)) * Math.pow(Math.sin(Math.PI * f), 1.4) * pause + 0.04 * Math.sin(t * 37), 0, 1);
+}
+
+let level = 0;
+function stepLevel(dt, t) {
+  let target = 0;
+  const now = performance.now();
+  if (now - voice.manualAt < 300) target = voice.manual;
+  else if (state === 'listening') {
+    if (mic.analyser) target = clamp(rms(mic.analyser, mic.buf) * 7, 0, 1);
+    else if (CONFIG.demoMode) target = clamp(0.18 + 0.22 * noise(t * 2.2, 4.4), 0, 1);
+  } else if (state === 'speaking') {
+    if (voice.analyser) target = clamp(rms(voice.analyser, voice.buf) * 5, 0, 1);
+    else if (CONFIG.demoMode) target = simulatedSpeech(t);
+  }
+  const k = target > level ? 22 : 7;
+  level += (target - level) * (1 - Math.exp(-dt * k));
+  U.uLevel.value = level;
+}
+
+/* =====================================================================
+   State machine + UI wiring
+   ===================================================================== */
+const STATES = ['idle', 'listening', 'thinking', 'speaking'];
+let state = 'idle';
+const mix = { listening: 0, thinking: 0, speaking: 0 };
+const listeners = new Map();
+function emit(type, detail = {}) {
+  (listeners.get(type) || []).forEach((fn) => { try { fn(detail); } catch (err) { console.error(err); } });
+  window.dispatchEvent(new CustomEvent(`avatar:${type}`, { detail }));
+}
+
+const ui = {
+  hud: document.getElementById('hud'),
+  status: document.getElementById('status'),
+  toast: document.getElementById('toast'),
+  thinking: document.getElementById('thinking'),
+  veil: document.getElementById('veil'),
+  boot: document.getElementById('boot'),
+  stateBtns: [...document.querySelectorAll('[data-state]')],
+  mic: document.getElementById('btn-mic'),
+  replay: document.getElementById('btn-replay'),
+  sound: document.getElementById('btn-sound'),
+  exit: document.getElementById('btn-exit'),
+  gesture: document.getElementById('btn-gesture'),
+  resume: document.getElementById('btn-resume'),
+};
+
+let statusText = 'STATUS: IDLE', scrambleRAF = 0;
+function writeStatus(text) {
+  if (text === statusText) return;
+  statusText = text;
+  cancelAnimationFrame(scrambleRAF);
+  if (REDUCED_MOTION) { ui.status.textContent = text; return; }
+  const glyphs = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789#%/';
+  let frame = 0;
+  const total = 16;
+  const step = () => {
+    frame++;
+    const n = Math.floor((text.length * frame) / total);
+    let out = text.slice(0, n);
+    for (let i = n; i < text.length; i++) out += text[i] === ' ' ? ' ' : glyphs[(Math.random() * glyphs.length) | 0];
+    ui.status.textContent = out;
+    if (frame < total) scrambleRAF = requestAnimationFrame(step);
+  };
+  step();
+}
+
+let toastTimer = 0;
+function toast(msg) {
+  ui.toast.textContent = msg;
+  ui.toast.classList.add('is-on');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => ui.toast.classList.remove('is-on'), 2200);
+}
+
+let demoTimers = [];
+function cancelDemo() { demoTimers.forEach(clearTimeout); demoTimers = []; }
+
+function setState(next, source = 'api') {
+  if (!STATES.includes(next) || next === state) return;
+  if (source !== 'demo') cancelDemo();
+  const prev = state;
+  state = next;
+  ui.stateBtns.forEach((b) => b.setAttribute('aria-checked', String(b.dataset.state === next)));
+  writeStatus(`STATUS: ${next.toUpperCase()}`);
+  ui.thinking.classList.toggle('is-active', next === 'thinking');
+  sfx.state(next);
+  emit('statechange', { state: next, prev, source });
+}
+
+function renderMic() {
+  ui.mic.setAttribute('aria-pressed', String(mic.on));
+  ui.mic.querySelector('span').textContent = mic.on ? 'MIC ON' : 'MIC OFF';
+  ui.mic.classList.toggle('is-live', mic.on);
+}
+async function setMic(on) {
+  if (on === mic.on) return;
+  if (on) {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+      const ctx = getCtx();
+      if (ctx.state === 'suspended') await ctx.resume();
+      const src = ctx.createMediaStreamSource(stream);
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 1024;
+      src.connect(analyser);
+      Object.assign(mic, { on: true, stream, src, analyser, buf: new Float32Array(analyser.fftSize) });
+      renderMic();
+      emit('mic', { on: true, stream });
+      if (state === 'idle') setState('listening', 'mic');
+    } catch (error) {
+      toast('MICROPHONE BLOCKED');
+      emit('mic', { on: false, error });
+    }
+  } else {
+    mic.stream?.getTracks().forEach((tr) => tr.stop());
+    mic.src?.disconnect();
+    Object.assign(mic, { on: false, stream: null, src: null, analyser: null, buf: null });
+    renderMic();
+    emit('mic', { on: false });
+    if (state === 'listening') setState('idle', 'mic');
+  }
+}
+
+function setSound(on) {
+  sfx.on = on;
+  ui.sound.setAttribute('aria-pressed', String(on));
+  ui.sound.querySelector('span').textContent = on ? 'SOUND ON' : 'SOUND OFF';
+  ui.sound.querySelector('.mute').style.display = on ? 'none' : '';
+  if (voice.el) voice.el.muted = !on;
+  emit('sound', { on });
+}
+
+let gestureOn = false;
+function setGesture(on) {
+  gestureOn = on;
+  ui.gesture.setAttribute('aria-pressed', String(on));
+  emit('gesture', { on });
+}
+
+function runDemo() {
+  cancelDemo();
+  setState('thinking', 'demo');
+  demoTimers.push(setTimeout(() => setState('speaking', 'demo'), 1500));
+  demoTimers.push(setTimeout(() => setState('idle', 'demo'), 5200));
+}
+
+let awake = 1, awakeTarget = 1;
+function exitSession() {
+  emit('exit');
+  if (!CONFIG.exitOverlay) return;
+  cancelDemo();
+  if (mic.on) setMic(false);
+  setState('idle', 'exit');
+  awakeTarget = 0;
+  ui.hud.classList.add('is-asleep');
+  ui.veil.classList.add('is-on');
+  ui.veil.setAttribute('aria-hidden', 'false');
+  setTimeout(() => ui.resume.focus(), 50);
+}
+function resumeSession() {
+  awakeTarget = 1;
+  ui.hud.classList.remove('is-asleep');
+  ui.veil.classList.remove('is-on');
+  ui.veil.setAttribute('aria-hidden', 'true');
+  emit('resume');
+}
+
+ui.stateBtns.forEach((b) => b.addEventListener('click', () => { sfx.click(); setState(b.dataset.state, 'ui'); }));
+ui.mic.addEventListener('click', () => { sfx.click(); setMic(!mic.on); });
+ui.replay.addEventListener('click', () => { sfx.click(); emit('replay'); if (CONFIG.demoMode) runDemo(); });
+ui.sound.addEventListener('click', () => { setSound(!sfx.on); sfx.click(); });
+ui.gesture.addEventListener('click', () => { sfx.click(); setGesture(!gestureOn); });
+ui.exit.addEventListener('click', () => { sfx.click(); exitSession(); });
+ui.resume.addEventListener('click', () => { sfx.click(); resumeSession(); });
+
+window.addEventListener('keydown', (e) => {
+  if (e.metaKey || e.ctrlKey || e.altKey || e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+  const k = e.key.toLowerCase();
+  if (k >= '1' && k <= '4') setState(STATES[+k - 1], 'keyboard');
+  else if (k === 'm') setMic(!mic.on);
+  else if (k === 'r') { emit('replay'); if (CONFIG.demoMode) runDemo(); }
+  else if (k === 's') setSound(!sfx.on);
+  else if (k === 'g') setGesture(!gestureOn);
+  else if (k === 'escape') awakeTarget === 0 ? resumeSession() : exitSession();
+});
+
+/* =====================================================================
+   Glitch slices around the head
+   ===================================================================== */
+const bands = Array.from({ length: 4 }, () => ({ until: 0 }));
+const headBox = [new THREE.Vector3(-0.42, 0.12, 0), new THREE.Vector3(0.42, 1.16, 0)];
+const tmpV = new THREE.Vector3();
+function headScreenRect() {
+  tmpV.copy(headBox[0]).applyMatrix4(bust.matrixWorld).project(camera);
+  const x0 = tmpV.x * 0.5 + 0.5, y0 = tmpV.y * 0.5 + 0.5;
+  tmpV.copy(headBox[1]).applyMatrix4(bust.matrixWorld).project(camera);
+  return { x0, y0, x1: tmpV.x * 0.5 + 0.5, y1: tmpV.y * 0.5 + 0.5 };
+}
+function stepGlitch(dt, nowMs) {
+  const rate = REDUCED_MOTION ? 0 : 0.32 + mix.thinking * 2.6 + mix.speaking * 0.4;
+  if (Math.random() < rate * dt) {
+    const r = headScreenRect();
+    const n = 1 + ((Math.random() * 3) | 0);
+    for (let i = 0; i < n; i++) {
+      const b = bands.find((x) => x.until < nowMs) || bands[(Math.random() * 4) | 0];
+      const yc = r.y0 + (0.25 + Math.random() * 0.7) * (r.y1 - r.y0);
+      const h = 0.002 + Math.random() * 0.011;
+      const right = Math.random() < 0.7;
+      const edge = right ? r.x1 : r.x0;
+      const w = 0.02 + Math.random() * 0.07;
+      const xc = edge + (right ? -1 : 1) * Math.random() * 0.03;
+      Object.assign(b, {
+        y0: yc, y1: yc + h, x0: xc - w * 0.5, x1: xc + w * 0.5,
+        off: (right ? 1 : -1) * (0.002 + Math.random() * 0.012),
+        dark: Math.random() < 0.45 ? 0.9 : 0, split: Math.random() * 0.003,
+        until: nowMs + 50 + Math.random() * 170,
+      });
+    }
+  }
+  bands.forEach((b, i) => {
+    const live = b.until > nowMs;
+    bandVecs[i].set(b.y0 || 0, b.y1 || 0, b.off || 0, b.dark || 0);
+    bandXVecs[i].set(b.x0 || 0, b.x1 || 0, live ? 1 : 0, b.split || 0);
+  });
+}
+
+/* =====================================================================
+   Frame loop
+   ===================================================================== */
+const statusAnchor = new THREE.Vector3(0.65, 0.92, 0);
+const frameTimes = [];
+let last = performance.now(), time = 0, firstFrame = true;
+
+function frame(now) {
+  requestAnimationFrame(frame);
+  const dt = Math.min(0.05, (now - last) / 1000);
+  last = now;
+  time += dt;
+  U.uTime.value = time;
+
+  // ease state blends
+  const ease = 1 - Math.exp(-dt * 4);
+  for (const s of ['listening', 'thinking', 'speaking']) mix[s] += ((state === s ? 1 : 0) - mix[s]) * ease;
+  U.uListen.value = mix.listening; U.uThink.value = mix.thinking; U.uSpeak.value = mix.speaking;
+  U.uSwirl.value += dt * (0.05 + mix.thinking * 0.9);
+  stepLevel(dt, time);
+  stepHead(dt, time);
+
+  // body: breathing and a little follow through
+  bust.rotation.y = head.yaw * 0.08;
+  bust.position.y = Math.sin(time * 0.9) * 0.004;
+
+  // camera parallax
+  pointer.sx += ((pointer.inside ? pointer.x : 0) - pointer.sx) * (1 - Math.exp(-dt * 2));
+  pointer.sy += ((pointer.inside ? pointer.y : 0) - pointer.sy) * (1 - Math.exp(-dt * 2));
+  camera.position.set(camBase.x + pointer.sx * 0.07, camBase.y + pointer.sy * 0.035, camBase.z);
+  camera.lookAt(camTarget);
+  terrain.position.x = -pointer.sx * 0.05;
+
+  // warm glow under the face lines
+  U.uFaceGlow.value = 0.16 + 0.03 * Math.sin(time * 1.3) + mix.speaking * level * 0.42 + mix.thinking * 0.05 * (1 + Math.sin(time * 4)) + mix.listening * 0.04;
+  bust.updateMatrixWorld();
+
+  // status tag anchored next to the head
+  tmpV.copy(statusAnchor).applyMatrix4(bust.matrixWorld).project(camera);
+  ui.status.style.transform = `translate3d(${((tmpV.x * 0.5 + 0.5) * viewW).toFixed(1)}px, ${((-tmpV.y * 0.5 + 0.5) * viewH).toFixed(1)}px, 0) translateY(-50%)`;
+
+  stepGlitch(dt, now);
+  awake += (awakeTarget - awake) * (1 - Math.exp(-dt * 3));
+  finalMat.uniforms.uAwake.value = awake;
+
+  composer.render(dt);
+
+  if (firstFrame) {
+    firstFrame = false;
+    ui.boot.classList.add('is-done');
+    window.__avatarReady = true;
+  }
+  // adaptive resolution if the device struggles
+  frameTimes.push(dt);
+  if (frameTimes.length >= 90) {
+    const avg = frameTimes.reduce((a, b) => a + b, 0) / frameTimes.length;
+    frameTimes.length = 0;
+    if (avg > 0.028 && pixelRatio > 1) { pixelRatio = Math.max(1, pixelRatio - 0.25); layout(); }
+  }
+}
+requestAnimationFrame(frame);
+
+/* =====================================================================
+   Public API for your backend
+   =====================================================================
+   Avatar.setState('idle' | 'listening' | 'thinking' | 'speaking')
+   Avatar.setAudioLevel(0..1)        push a live voice level (lip sync energy)
+   Avatar.attachAudio(audioElement)  drive the speaking animation from an <audio> element
+   Avatar.attachStream(mediaStream)  drive it from a WebRTC or TTS MediaStream
+   Avatar.lookAt(x, y)               gaze target in -1..1 screen space (e.g. from hand tracking)
+   Avatar.releaseLook()              give gaze back to the cursor
+   Avatar.setStatus(text)            override the status tag text
+   Avatar.setMic(bool) / setSound(bool) / setGesture(bool)
+   Avatar.on(event, fn) / off(event, fn)
+   Events: statechange, mic (gives the MediaStream), replay, sound, gesture, exit, resume.
+   Each is also dispatched on window as avatar:<event>.
+*/
+function connectVoice(node) {
+  const ctx = getCtx();
+  voice.node?.disconnect?.();
+  const analyser = ctx.createAnalyser();
+  analyser.fftSize = 1024;
+  node.connect(analyser);
+  Object.assign(voice, { node, analyser, buf: new Float32Array(analyser.fftSize) });
+  return analyser;
+}
+
+window.Avatar = {
+  setState: (s) => setState(s, 'api'),
+  getState: () => state,
+  setStatus: (text) => writeStatus(String(text)),
+  setAudioLevel: (v) => { voice.manual = clamp(+v || 0, 0, 1); voice.manualAt = performance.now(); },
+  attachAudio(el) {
+    const ctx = getCtx();
+    const src = ctx.createMediaElementSource(el);
+    src.connect(ctx.destination);
+    voice.el = el;
+    el.muted = !sfx.on;
+    connectVoice(src);
+  },
+  attachStream(stream) { connectVoice(getCtx().createMediaStreamSource(stream)); },
+  detachAudio() { voice.node?.disconnect?.(); Object.assign(voice, { node: null, analyser: null, buf: null, el: null }); },
+  lookAt(x, y) { Object.assign(external, { on: true, x: clamp(x, -1, 1), y: clamp(y, -1, 1), at: performance.now() }); },
+  releaseLook() { external.on = false; },
+  setMic, setSound, setGesture,
+  exit: exitSession, resume: resumeSession,
+  on(type, fn) { if (!listeners.has(type)) listeners.set(type, new Set()); listeners.get(type).add(fn); return () => this.off(type, fn); },
+  off(type, fn) { listeners.get(type)?.delete(fn); },
+  config: CONFIG,
+};
+</script>
+
+<!-- =====================================================================
+     Ultron glue: WebSocket + hold-space mic + Web Speech STT/TTS
+     ===================================================================== -->
+<style>
+  .ultron-credit {
+    position: fixed;
+    top: 20px;
+    right: 24px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    font: 9.5px "Share Tech Mono", monospace;
+    color: #4e8a94;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    pointer-events: none;
+    user-select: none;
+    z-index: 3;
+    opacity: 0.9;
+  }
+  .ultron-credit span { line-height: 1; }
+  .ultron-credit img {
+    height: 22px;
+    width: auto;
+    display: block;
+    filter: drop-shadow(0 0 6px rgba(255, 140, 60, .25));
+  }
+  @media (max-width: 640px) {
+    .ultron-credit { top: 12px; right: 12px; font-size: 8.5px; }
+    .ultron-credit img { height: 18px; }
+  }
+  .ultron-ring {
+    position: fixed; inset: 0; pointer-events: none; z-index: 3;
+    box-shadow: inset 0 0 0 0 rgba(43,197,223,0), inset 0 0 60px 10px rgba(43,197,223,0);
+    transition: box-shadow .35s ease;
+  }
+  .ultron-ring.is-listen {
+    box-shadow: inset 0 0 0 2px rgba(43,197,223,.55), inset 0 0 120px 20px rgba(43,197,223,.22);
+    animation: ultronPulse 1.3s ease-in-out infinite;
+  }
+  .ultron-ring.is-speak {
+    box-shadow: inset 0 0 0 2px rgba(255,179,107,.55), inset 0 0 120px 20px rgba(255,140,40,.18);
+  }
+  @keyframes ultronPulse {
+    50% { box-shadow: inset 0 0 0 3px rgba(154,240,255,.85), inset 0 0 180px 30px rgba(43,197,223,.34); }
+  }
+  .ultron-caption {
+    position: fixed; left: 50%; bottom: 76px; transform: translateX(-50%);
+    max-width: min(80vw, 720px); min-height: 24px;
+    padding: 8px 16px; border-radius: 8px;
+    background: rgba(7, 13, 16, 0.78); border: 1px solid #0d3a42;
+    color: #c9e3e9; font: 13px "Share Tech Mono", monospace;
+    letter-spacing: .04em; text-align: center;
+    z-index: 4; pointer-events: none;
+    opacity: 0; transition: opacity .25s ease, border-color .25s ease, color .25s ease;
+    white-space: pre-wrap; word-break: break-word;
+  }
+  .ultron-caption.is-on { opacity: 1; }
+  .ultron-caption.is-listen { border-color: #2a9fb2; color: #9af0ff;
+    box-shadow: 0 0 18px rgba(43,197,223,.22); }
+  .ultron-caption.is-speak  { border-color: #ffb36b; color: #ffdfbf;
+    box-shadow: 0 0 18px rgba(255,140,40,.20); }
+  .ultron-caption .cursor { animation: ultronBlink 1s steps(2) infinite; }
+  @keyframes ultronBlink { 50% { opacity: 0; } }
+
+  .ultron-gate {
+    position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%);
+    padding: 18px 22px; border-radius: 10px;
+    background: rgba(7, 13, 16, 0.94); border: 1px solid #11515b;
+    color: #e3fbff; font: 13px "Share Tech Mono", monospace;
+    z-index: 6; display: grid; gap: 12px; max-width: min(90vw, 560px);
+    box-shadow: 0 0 24px rgba(43,197,223,.22);
+  }
+  .ultron-gate .title { color: #ffb36b; letter-spacing: 0.26em; font-size: 11px; }
+  .ultron-gate pre { margin: 0; white-space: pre-wrap; word-break: break-word; font: 12px "Share Tech Mono", monospace; color: #9af0ff; }
+  .ultron-gate .row { display: flex; gap: 10px; justify-content: flex-end; }
+  .ultron-gate button { font: inherit; cursor: pointer; padding: 6px 14px; border-radius: 6px; background: rgba(7,42,48,.94); color: #e3fbff; border: 1px solid #0d3a42; }
+  .ultron-gate button.deny { color: #ffb36b; border-color: #ffb36b; }
+</style>
+
+<div class="ultron-credit" aria-label="Developed by Agent Valley AI">
+  <span>developed by</span>
+  <img src="agent-valley-logo.png" alt="" />
+</div>
+<div class="ultron-ring" id="ultron-ring"></div>
+<div class="ultron-caption" id="ultron-caption"></div>
+
+<script>
+(() => {
+  // The humanoid script is `type="module"` and runs AFTER classic <script> tags.
+  // Wait for window.Avatar to be defined before wiring anything up.
+  function whenAvatarReady(cb) {
+    if (window.Avatar) return cb();
+    const t = setInterval(() => {
+      if (window.Avatar) { clearInterval(t); cb(); }
+    }, 30);
+  }
+  whenAvatarReady(main);
+  function main() {
+  const AV = window.Avatar;
+  const cap = document.getElementById('ultron-caption');
+  const ring = document.getElementById('ultron-ring');
+  const micBtn = document.getElementById('btn-mic');
+
+  // Browser-only logging now; the on-screen debug ribbon was removed.
+  // Open DevTools (F12 → Console) to see these.
+  function dbgLog(text, kind) {
+    const fn = kind === 'err' ? console.warn : console.log;
+    fn('[Ultron]', text);
+  }
+
+  function setCaption(text, mode) {
+    cap.textContent = text || '';
+    cap.classList.toggle('is-on', !!text);
+    cap.classList.toggle('is-listen', mode === 'listen');
+    cap.classList.toggle('is-speak',  mode === 'speak');
+  }
+  function setRing(mode) {
+    ring.classList.toggle('is-listen', mode === 'listen');
+    ring.classList.toggle('is-speak',  mode === 'speak');
+  }
+  function setMicLive(on) {
+    micBtn?.classList.toggle('is-live', on);
+  }
+
+  // ---------- Live mic → avatar animation ----------
+  let micStream = null;
+  async function openMicStream() {
+    if (micStream) return micStream;
+    try {
+      micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      AV.attachStream?.(micStream);
+      return micStream;
+    } catch (err) {
+      AV.setStatus('MIC BLOCKED');
+      return null;
+    }
+  }
+  function closeMicStream() {
+    micStream?.getTracks().forEach((t) => t.stop());
+    AV.detachAudio?.();
+    micStream = null;
+  }
+
+  // ---------- WebSocket ----------
+  const wsUrl = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws';
+  let ws, wsReady = false, reconnect = 500;
+  const pendingGates = new Map();
+
+  function connect() {
+    dbgLog('WS connecting → ' + wsUrl);
+    ws = new WebSocket(wsUrl);
+    ws.binaryType = 'arraybuffer';
+    ws.onopen  = () => { dbgLog('WS open — hold SPACE to talk', 'ok'); wsReady = true; reconnect = 500; AV.setStatus('READY · HOLD SPACE'); };
+    ws.onclose = () => { dbgLog('WS closed, reconnecting in ' + reconnect + 'ms', 'err'); wsReady = false; AV.setStatus('OFFLINE'); setTimeout(connect, reconnect); reconnect = Math.min(reconnect * 2, 5000); };
+    ws.onerror = () => { dbgLog('WS error', 'err'); try { ws.close(); } catch {} };
+    ws.onmessage = (ev) => {
+      if (typeof ev.data !== 'string') { handleAudio(ev.data); return; }
+      let m; try { m = JSON.parse(ev.data); } catch { return; }
+      if (m.type === 'token') return; // skip, too noisy
+      dbgLog('server → ' + m.type + (m.text ? ': ' + String(m.text).slice(0, 80) : (m.state ? ' ' + m.state : '')));
+      handle(m);
+    };
+  }
+  function sendBin(buf) { if (wsReady && ws.readyState === WebSocket.OPEN) ws.send(buf); }
+  function send(obj) { if (wsReady) ws.send(JSON.stringify(obj)); }
+  connect();
+
+  // ---------- Server messages ----------
+  let streaming = '';
+  let voiceMode = 'browser';     // overridden by server on connect
+  let sttSampleRate = 16000;
+  let ttsSampleRate = 24000;
+  function handle(m) {
+    if (m.type === 'voice_mode') {
+      voiceMode = m.mode;
+      if (m.sttSampleRate) sttSampleRate = m.sttSampleRate;
+      if (m.ttsSampleRate) ttsSampleRate = m.ttsSampleRate;
+      dbgLog('voice mode = ' + voiceMode, 'ok');
+    }
+    else if (m.type === 'state') AV.setState(m.state);
+    else if (m.type === 'status') AV.setStatus(m.text);
+    else if (m.type === 'route')  AV.setStatus(`${m.decision.connector.toUpperCase()} · ${m.decision.model.toUpperCase()}`);
+    else if (m.type === 'transcript') { setCaption(m.text || '', m.text ? 'listen' : null); }
+    else if (m.type === 'clarify') { if (voiceMode === 'browser') speak(m.text); }
+    else if (m.type === 'say')     { if (voiceMode === 'browser') speak(m.text); streaming = ''; }
+    else if (m.type === 'token')   { streaming += m.text; }
+    else if (m.type === 'tts_start') { startPcmPlayback(m.sampleRate || ttsSampleRate); AV.setState('speaking'); setRing('speak'); }
+    else if (m.type === 'tts_end')   { endPcmPlayback(); }
+    else if (m.type === 'error')   { AV.setStatus('ERROR'); setCaption('⚠ ' + m.text, 'speak'); if (voiceMode === 'browser') speak(m.text); }
+    else if (m.type === 'done')    { /* keep caption visible */ }
+    else if (m.type === 'gate')    showGate(m);
+  }
+
+  // ---------- PCM streaming playback (Soniox TTS) ----------
+  let pcmCtx = null, pcmNextTime = 0, pcmRate = 24000;
+  let pcmSources = [];     // active AudioBufferSourceNodes, for barge-in
+  let pcmChunksIn = 0, pcmBytesIn = 0;
+  async function startPcmPlayback(rate) {
+    pcmRate = rate;
+    pcmChunksIn = 0; pcmBytesIn = 0;
+    if (!pcmCtx || pcmCtx.state === 'closed') pcmCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (pcmCtx.state === 'suspended') {
+      try { await pcmCtx.resume(); } catch (e) { dbgLog('pcmCtx.resume failed: ' + e.message, 'err'); }
+    }
+    pcmNextTime = 0;
+    dbgLog('TTS playback ready: ctx=' + pcmCtx.state + ' rate=' + rate, 'ok');
+  }
+  function endPcmPlayback() {
+    const extra = Math.max(0, pcmNextTime - (pcmCtx?.currentTime ?? 0));
+    dbgLog('TTS stream ended: ' + pcmChunksIn + ' chunks, ' + pcmBytesIn + ' bytes, tail ' + extra.toFixed(2) + 's');
+    setTimeout(() => { AV.setState('idle'); setRing(null); setCaption('', null); pcmSources = []; }, extra * 1000 + 200);
+  }
+  function interruptPlayback() {
+    // Barge-in: stop every scheduled chunk immediately.
+    for (const s of pcmSources) { try { s.stop(0); } catch {} try { s.disconnect(); } catch {} }
+    pcmSources = [];
+    pcmNextTime = pcmCtx?.currentTime ?? 0;
+    AV.setState('idle'); setRing(null); setCaption('', null);
+  }
+  function interruptPlayback() {
+    // Barge-in: stop every scheduled chunk immediately.
+    for (const s of pcmSources) { try { s.stop(0); } catch {} try { s.disconnect(); } catch {} }
+    pcmSources = [];
+    pcmNextTime = pcmCtx?.currentTime ?? 0;
+    AV.setState('idle'); setRing(null);
+  }
+  function handleAudio(arrayBuf) {
+    if (!pcmCtx) startPcmPlayback(ttsSampleRate);
+    pcmChunksIn++;
+    pcmBytesIn += arrayBuf.byteLength;
+    if (pcmChunksIn === 1) dbgLog('first PCM chunk arrived (' + arrayBuf.byteLength + ' bytes, ctx=' + pcmCtx.state + ')', 'ok');
+    const dv = new DataView(arrayBuf);
+    const samples = dv.byteLength / 2;
+    const f32 = new Float32Array(samples);
+    for (let i = 0; i < samples; i++) {
+      const s = dv.getInt16(i * 2, true);
+      f32[i] = s < 0 ? s / 0x8000 : s / 0x7fff;
+    }
+    const buf = pcmCtx.createBuffer(1, samples, pcmRate);
+    buf.getChannelData(0).set(f32);
+    const src = pcmCtx.createBufferSource();
+    src.buffer = buf;
+    src.connect(pcmCtx.destination);
+    const now = pcmCtx.currentTime;
+    if (pcmNextTime < now + 0.02) pcmNextTime = now + 0.02;
+    src.start(pcmNextTime);
+    pcmNextTime += buf.duration;
+    pcmSources.push(src);
+    src.onended = () => { pcmSources = pcmSources.filter(x => x !== src); };
+  }
+
+  // ---------- Clap-to-wake ----------
+  // Persistent AnalyserNode polls audio frames every 50ms. A frame counts as a
+  // "clap transient" when RMS, 2-5 kHz band ratio, and spectral flatness all
+  // cross their thresholds. Two transients 150-800ms apart = double clap =
+  // trigger startListen(). While listening, silence of 1.5s auto-submits.
+  const CLAP_RMS_THRESHOLD = 0.28;
+  const CLAP_BAND_RATIO    = 0.30;
+  const CLAP_FLATNESS      = 0.35;
+  const CLAP_DEBOUNCE_MS   = 150;
+  const CLAP_GAP_MIN_MS    = 150;
+  const CLAP_GAP_MAX_MS    = 800;
+  const SILENCE_HOLD_MS    = 1500;
+  const RMS_HISTORY_SIZE   = 40;   // 40 * 50ms = 2s rolling window
+  let clapOn = false;
+  let clapStream = null, clapCtx = null, clapAnalyser = null, clapSrcNode = null;
+  let clapTickTimer = null;
+  let lastTransientAt = 0;
+  let listeningViaClap = false;
+  let silenceStartAt = 0;
+  const rmsHistory = [];
+  let freqBuf = null;
+
+  async function openClapListener() {
+    if (clapStream) return true;
+    try {
+      clapStream = await navigator.mediaDevices.getUserMedia({
+        audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: false },
+      });
+      clapCtx = new (window.AudioContext || window.webkitAudioContext)();
+      if (clapCtx.state === 'suspended') await clapCtx.resume();
+      AV.attachStream?.(clapStream);
+      clapSrcNode = clapCtx.createMediaStreamSource(clapStream);
+      clapAnalyser = clapCtx.createAnalyser();
+      clapAnalyser.fftSize = 2048;
+      clapAnalyser.smoothingTimeConstant = 0;
+      clapSrcNode.connect(clapAnalyser);
+      freqBuf = new Uint8Array(clapAnalyser.frequencyBinCount);
+      lastTransientAt = 0;
+      rmsHistory.length = 0;
+      clapTickTimer = setInterval(analyseClapFrame, 50);
+      dbgLog('clap listener armed @ ' + clapCtx.sampleRate + 'Hz', 'ok');
+      return true;
+    } catch (err) {
+      dbgLog('clap mic denied: ' + err.message, 'err');
+      await closeClapListener();
+      return false;
+    }
+  }
+
+  async function closeClapListener() {
+    if (clapTickTimer) { clearInterval(clapTickTimer); clapTickTimer = null; }
+    try { clapSrcNode?.disconnect(); } catch {}
+    try { clapAnalyser?.disconnect(); } catch {}
+    try { clapCtx?.close(); } catch {}
+    try { clapStream?.getTracks().forEach(t => t.stop()); } catch {}
+    AV.detachAudio?.();
+    clapSrcNode = null; clapAnalyser = null; clapCtx = null; clapStream = null;
+    freqBuf = null;
+    listeningViaClap = false; silenceStartAt = 0;
+    dbgLog('clap listener off');
+  }
+
+  function analyseClapFrame() {
+    if (!clapAnalyser || !freqBuf) return;
+    clapAnalyser.getByteFrequencyData(freqBuf);
+
+    const binHz = clapCtx.sampleRate / clapAnalyser.fftSize;
+    const bin2k = Math.max(1, Math.floor(2000 / binHz));
+    const bin5k = Math.min(freqBuf.length - 1, Math.floor(5000 / binHz));
+
+    let totalE = 0, bandE = 0;
+    let logSum = 0, arithSum = 0, nz = 0;
+    for (let i = 0; i < freqBuf.length; i++) {
+      const v = freqBuf[i] / 255;
+      const v2 = v * v;
+      totalE += v2;
+      if (i >= bin2k && i <= bin5k) bandE += v2;
+      if (v > 0.01) { logSum += Math.log(v); arithSum += v; nz++; }
+    }
+    const rms = Math.sqrt(totalE / freqBuf.length);
+    const bandRatio = totalE > 0 ? bandE / totalE : 0;
+    const flatness = nz > 10 ? Math.exp(logSum / nz) / (arithSum / nz) : 0;
+
+    rmsHistory.push(rms);
+    if (rmsHistory.length > RMS_HISTORY_SIZE) rmsHistory.shift();
+
+    // Mode A: user actively listening via clap — detect end-of-speech silence.
+    if (listeningViaClap) {
+      const sorted = [...rmsHistory].sort((a, b) => a - b);
+      const median = sorted[Math.floor(sorted.length / 2)] || 0;
+      const silenceThreshold = Math.max(0.02, median * 0.5);
+      if (rms < silenceThreshold) {
+        if (!silenceStartAt) silenceStartAt = Date.now();
+        else if (Date.now() - silenceStartAt > SILENCE_HOLD_MS) {
+          dbgLog('silence held — stopping listen', 'ok');
+          listeningViaClap = false;
+          silenceStartAt = 0;
+          stopListen(true);
+        }
+      } else {
+        silenceStartAt = 0;
+      }
+      return;
+    }
+
+    // Mode B: idle — detect clap transients.
+    const now = Date.now();
+    if (rms < CLAP_RMS_THRESHOLD) return;
+    if (bandRatio < CLAP_BAND_RATIO) return;
+    if (flatness < CLAP_FLATNESS) return;
+    if (now - lastTransientAt < CLAP_DEBOUNCE_MS) return;
+
+    const gap = lastTransientAt ? (now - lastTransientAt) : 0;
+    const prev = lastTransientAt;
+    lastTransientAt = now;
+    if (prev && gap >= CLAP_GAP_MIN_MS && gap <= CLAP_GAP_MAX_MS) {
+      dbgLog('double-clap detected (gap=' + gap + 'ms)', 'ok');
+      lastTransientAt = 0;         // reset so a 3rd clap doesn't re-fire
+      triggerClapWake();
+    } else {
+      dbgLog('clap transient (' + Math.round(rms * 100) + '% rms, band=' + bandRatio.toFixed(2) + ', flat=' + flatness.toFixed(2) + ')');
+    }
+  }
+
+  function triggerClapWake() {
+    if (listening) return;         // already listening via space-bar or previous clap
+    listeningViaClap = true;
+    silenceStartAt = 0;
+    startListen();
+  }
+
+  // ---------- PCM mic capture (Soniox STT) ----------
+  // Use whatever sample rate the browser gives us. Chrome often ignores the
+  // 16kHz constraint and returns 48kHz; sending 48kHz audio tagged as 16kHz
+  // makes Soniox hear fast-forward garble and return nothing.
+  let micCtx = null, micProc = null, micSrc = null, micStreamRaw = null;
+  let micOwnsStream = true;   // false when we're borrowing from clap mode
+  let micOwnsCtx = true;
+  let micBorrowedSrc = false; // true when micSrc is actually the clap analyser's source
+  let pcmChunksSent = 0, actualMicRate = 0;
+  async function openPcmMic() {
+    try {
+      // Reuse the clap-mode stream + context when they exist. A MediaStream
+      // can only have ONE MediaStreamSourceNode per context — calling
+      // createMediaStreamSource twice returns a silent node — so borrow
+      // the existing clapSrcNode instead and just connect our processor to it.
+      if (clapStream && clapCtx && clapSrcNode) {
+        dbgLog('reusing clap-mode mic stream + source node');
+        micStreamRaw = clapStream;
+        micCtx = clapCtx;
+        micSrc = clapSrcNode;
+        micOwnsStream = false; micOwnsCtx = false; micBorrowedSrc = true;
+        if (micCtx.state === 'suspended') await micCtx.resume();
+        actualMicRate = micCtx.sampleRate;
+      } else {
+        dbgLog('requesting mic…');
+        micStreamRaw = await navigator.mediaDevices.getUserMedia({
+          audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true },
+        });
+        dbgLog('mic granted', 'ok');
+        AV.attachStream?.(micStreamRaw);     // drive humanoid lip-sync from the mic
+        micCtx = new (window.AudioContext || window.webkitAudioContext)();
+        micOwnsStream = true; micOwnsCtx = true; micBorrowedSrc = false;
+        if (micCtx.state === 'suspended') await micCtx.resume();
+        actualMicRate = micCtx.sampleRate;
+        micSrc = micCtx.createMediaStreamSource(micStreamRaw);
+      }
+      micProc = micCtx.createScriptProcessor(2048, 1, 1);
+      micProc.onaudioprocess = (e) => {
+        const ch = e.inputBuffer.getChannelData(0);
+        const int16 = new Int16Array(ch.length);
+        for (let i = 0; i < ch.length; i++) {
+          const s = Math.max(-1, Math.min(1, ch[i]));
+          int16[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+        }
+        sendBin(int16.buffer);
+        pcmChunksSent++;
+      };
+      micSrc.connect(micProc);
+      micProc.connect(micCtx.destination);
+      return true;
+    } catch (err) {
+      dbgLog('mic error: ' + err.message + ' (' + err.name + ')', 'err');
+      return false;
+    }
+  }
+
+  // Pre-warm mic permission on first user gesture so the browser prompt
+  // appears BEFORE the user holds space (and so repeat holds are instant).
+  let micPrewarmed = false;
+  async function prewarmMic() {
+    if (micPrewarmed) return;
+    micPrewarmed = true;
+    if (voiceMode !== 'soniox') return;
+    try {
+      dbgLog('pre-warming mic permission…');
+      const s = await navigator.mediaDevices.getUserMedia({ audio: true });
+      s.getTracks().forEach(t => t.stop());
+      dbgLog('mic permission ready — hold SPACE', 'ok');
+    } catch (err) {
+      dbgLog('mic permission denied: ' + err.message, 'err');
+    }
+  }
+  window.addEventListener('keydown', prewarmMic, { once: true });
+  window.addEventListener('pointerdown', prewarmMic, { once: true });
+  function closePcmMic() {
+    // Disconnect our processor from everything (output + any upstream connections to it).
+    try { micProc?.disconnect(); } catch {}
+    // Also disconnect the source → processor edge specifically, so the shared
+    // clap source keeps feeding the clap analyser but stops feeding us.
+    try { micSrc?.disconnect(micProc); } catch {}
+    // Only disconnect the source entirely if WE created it (not borrowed from clap).
+    if (!micBorrowedSrc) { try { micSrc?.disconnect(); } catch {} }
+    // Only close the context / stop the tracks if we own them.
+    if (micOwnsCtx)    { try { micCtx?.close(); } catch {} }
+    if (micOwnsStream) { try { micStreamRaw?.getTracks().forEach(t => t.stop()); } catch {} }
+    if (micOwnsStream) AV.detachAudio?.();
+    micProc = null;
+    if (!micBorrowedSrc) micSrc = null;
+    if (micOwnsCtx)    micCtx = null;
+    if (micOwnsStream) micStreamRaw = null;
+    micOwnsStream = micOwnsCtx = true; micBorrowedSrc = false; // reset defaults
+  }
+
+  // ---------- TTS ----------
+  const synth = window.speechSynthesis;
+  let voice;
+  // Preferred voices in priority order. First match wins.
+  // Aims for the deepest male voices Windows / macOS / Chrome ship with.
+  const VOICE_PREFS = [
+    /microsoft (george|ryan|mark|guy)/i,     // Windows deep male voices
+    /google uk english male/i,               // Chrome's deep British male
+    /daniel|alex|fred|bruce/i,               // macOS deeper male voices
+    /\bmale\b.*en-GB/i,
+    /\bmale\b.*en/i,
+    /en-GB/i,
+    /en-US/i,
+    /en/i,
+  ];
+  function pickVoice() {
+    const vs = synth.getVoices();
+    for (const re of VOICE_PREFS) {
+      const hit = vs.find(v => re.test(v.name) || re.test(`${v.name} ${v.lang}`));
+      if (hit) { voice = hit; return; }
+    }
+    voice = vs[0];
+  }
+  if (synth) {
+    pickVoice();
+    synth.addEventListener('voiceschanged', pickVoice);
+  }
+
+  // Deeper, slower default. Overridable via Ultron.setTone().
+  let voiceRate = 0.92;
+  let voicePitch = 0.6;
+
+  // Browser-console helpers so you can audition and lock in a voice.
+  window.Ultron = {
+    voices: () => (synth?.getVoices() ?? []).map(v => `${v.name} — ${v.lang}`),
+    setVoice: (needle) => {
+      const vs = synth.getVoices();
+      const re = new RegExp(needle, 'i');
+      const hit = vs.find(v => re.test(v.name) || re.test(v.lang));
+      if (!hit) { console.warn('No voice matched', needle); return null; }
+      voice = hit;
+      speak(`Voice set to ${hit.name}.`);
+      return hit.name;
+    },
+    setTone: (rate, pitch) => {
+      if (typeof rate === 'number')  voiceRate  = Math.max(0.1, Math.min(2, rate));
+      if (typeof pitch === 'number') voicePitch = Math.max(0,   Math.min(2, pitch));
+      speak(`Rate ${voiceRate}, pitch ${voicePitch}.`);
+    },
+    test: (text = 'The quick brown fox jumps over the lazy dog.') => speak(text),
+  };
+  // Browsers block speechSynthesis until the first user gesture. Silent prime
+  // (no greeting here — the Soniox greeting is handled server-side via `greet`).
+  let ttsPrimed = false;
+  function primeTTS() {
+    if (ttsPrimed || !synth) return;
+    ttsPrimed = true;
+    const u = new SpeechSynthesisUtterance(' ');
+    u.volume = 0;
+    synth.speak(u);
+  }
+  window.addEventListener('keydown', primeTTS, { once: true });
+  window.addEventListener('pointerdown', primeTTS, { once: true });
+
+  // Auto-start sequence: 5 seconds after the page loads (and the WS has
+  // connected), Ultron will:
+  //   1. Try to arm the clap listener (requires mic permission).
+  //   2. Ask the server to speak the greeting.
+  // No click needed. If this is the user's FIRST ever visit and the browser
+  // has not yet granted mic permission or unlocked audio playback, the
+  // gesture-based fallbacks below take over on the next click/keypress.
+  let autoStarted = false;
+  async function autoStart() {
+    if (autoStarted) return;
+    autoStarted = true;
+    dbgLog('auto-start: arming clap + greeting');
+    if (voiceMode === 'soniox') {
+      const ok = await openClapListener();
+      if (ok) {
+        clapOn = true;
+        setClapBtnLabel(true);
+        AV.setStatus('CLAP WAKE ARMED');
+        setTimeout(() => { if (clapOn) AV.setStatus('READY · HOLD SPACE OR CLAP'); }, 2000);
+      } else {
+        clapOn = false;
+        setClapBtnLabel(false);
+      }
+      send({ type: 'greet' });
+    }
+  }
+  // Fire 5 seconds after page load regardless of click state. If the browser
+  // blocks the mic because this is the first visit (no stored permission),
+  // the fallback listeners below will fire the moment the user clicks.
+  setTimeout(autoStart, 5000);
+  // Fallback: on first click/keypress, run autoStart too — covers first-ever visits.
+  window.addEventListener('keydown', autoStart, { once: true });
+  window.addEventListener('pointerdown', autoStart, { once: true });
+
+  function speak(text) {
+    if (!synth || !text) return;
+    primeTTS();
+    synth.cancel();
+    const u = new SpeechSynthesisUtterance(text);
+    if (voice) u.voice = voice;
+    u.rate = voiceRate; u.pitch = voicePitch;
+    u.onstart = () => { AV.setState('speaking'); setRing('speak'); };
+    u.onend   = () => { AV.setState('idle'); setRing(null); setCaption('', null); };
+    synth.speak(u);
+  }
+
+  // ---------- STT ----------
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  let rec, listening = false, finalBuf = '', interimBuf = '';
+  if (!SR) {
+    dbgLog('No SpeechRecognition — use Chrome or Edge', 'err');
+    AV.setStatus('NO STT — USE CHROME');
+    setCaption('⚠ This browser has no speech recognition. Use Chrome or Edge.', 'speak');
+  } else {
+    rec = new SR();
+    rec.continuous = true;
+    rec.interimResults = true;
+    rec.lang = 'en-US';
+    rec.onstart  = () => dbgLog('STT started', 'ok');
+    rec.onresult = (e) => {
+      let interim = '', fin = '';
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const t = e.results[i][0].transcript;
+        if (e.results[i].isFinal) fin += t; else interim += t;
+      }
+      if (fin) finalBuf += fin;
+      interimBuf = interim;
+      const live = (finalBuf + ' ' + interim).trim();
+      dbgLog('heard: "' + live + '"');
+      setCaption(live || '', live ? 'listen' : null);
+    };
+    rec.onerror = (e) => {
+      dbgLog('STT error: ' + e.error, 'err');
+      AV.setStatus(`MIC ${String(e.error || '').toUpperCase()}`);
+      setCaption(`⚠ Mic error: ${e.error}`, 'speak');
+    };
+    rec.onend = () => {
+      if (listening) { try { rec.start(); } catch (err) { dbgLog('STT restart failed: ' + err.message, 'err'); } }
+    };
+  }
+  async function startListen() {
+    dbgLog('space DOWN');
+    try {
+      if (listening) { dbgLog('…already listening, ignore'); return; }
+      // Barge-in: cut any TTS audio currently playing and tell server to stop generating more.
+      interruptPlayback();
+      if (voiceMode === 'soniox') send({ type: 'interrupt' });
+      // Also cancel browser-TTS in case it's active (fallback mode).
+      try { window.speechSynthesis?.cancel(); } catch {}
+
+      listening = true; finalBuf = ''; interimBuf = '';
+      AV.setState('listening'); AV.setStatus('LISTENING');
+      setMicLive(true); setRing('listen');
+      setCaption('', null);
+
+      if (voiceMode === 'soniox') {
+        const ok = await openPcmMic();
+        if (!ok) { listening = false; setMicLive(false); setRing(null); return; }
+        send({ type: 'mic_start', sampleRate: actualMicRate });
+        dbgLog('mic open @ ' + actualMicRate + 'Hz, streaming…', 'ok');
+        return;
+      }
+      // Browser-native fallback
+      if (!rec) { dbgLog('startListen aborted — no STT', 'err'); return; }
+      const stream = await openMicStream();
+      if (!stream) { dbgLog('mic permission denied', 'err'); return; }
+      try { rec.start(); } catch (err) {
+        dbgLog('rec.start() threw: ' + err.message, 'err');
+        setCaption('⚠ Could not start mic: ' + err.message, 'speak');
+      }
+    } catch (err) {
+      dbgLog('startListen threw: ' + err.message + ' (' + err.name + ')', 'err');
+      listening = false; setMicLive(false); setRing(null); AV.setState('idle');
+    }
+  }
+  function stopListen(submit = true) {
+    if (!listening) return;
+    dbgLog('space UP');
+    listening = false;
+    setMicLive(false);
+    setRing(null);
+
+    if (voiceMode === 'soniox') {
+      closePcmMic();
+      if (submit) { send({ type: 'mic_end' }); dbgLog('sent mic_end (' + pcmChunksSent + ' chunks)', 'ok'); }
+      pcmChunksSent = 0;
+      // Server will emit transcript + state updates.
+      return;
+    }
+    // Browser-native fallback
+    try { rec.stop(); } catch {}
+    closeMicStream();
+    const text = (finalBuf + ' ' + interimBuf).trim();
+    if (submit && text) { setCaption(text, 'listen'); submitText(text); }
+    else if (submit) { dbgLog('no speech detected', 'err'); setCaption('⚠ no speech detected — try again, speak louder', 'speak'); AV.setState('idle'); }
+    else { setCaption('', null); AV.setState('idle'); }
+  }
+
+  // ---------- Submit ----------
+  function submitText(text) {
+    if (!wsReady) {
+      dbgLog('cannot submit — WS not ready', 'err');
+      setCaption('⚠ Not connected to server', 'speak');
+      return;
+    }
+    dbgLog('→ server: "' + text + '"', 'ok');
+    // (removed status dots — avatar's own thinking animation handles the cue)
+    send({ type: 'request', text });
+  }
+
+  // Hold spacebar to talk.
+  window.addEventListener('keydown', (e) => {
+    if (e.repeat) return;
+    if (e.code !== 'Space') return;
+    e.preventDefault();
+    startListen();
+  });
+  window.addEventListener('keyup', (e) => {
+    if (e.code !== 'Space') return;
+    stopListen(true);
+  });
+
+  // Dock mic button toggles listening too.
+  AV.on?.('mic', (ev) => {
+    if (ev?.detail?.on) startListen(); else stopListen(true);
+  });
+
+  // ---------- CLAP toggle button ----------
+  const clapBtn = document.getElementById('btn-clap');
+  function setClapBtnLabel(on) {
+    clapBtn?.setAttribute('aria-pressed', on ? 'true' : 'false');
+    const label = clapBtn?.querySelector('span');
+    if (label) label.textContent = on ? 'CLAP ON' : 'CLAP OFF';
+  }
+  clapBtn?.addEventListener('click', async () => {
+    if (voiceMode !== 'soniox') {
+      dbgLog('clap mode requires Soniox voice', 'err');
+      setCaption('⚠ Clap mode needs Soniox (server-side voice).', 'speak');
+      return;
+    }
+    if (!clapOn) {
+      const ok = await openClapListener();
+      if (!ok) { setClapBtnLabel(false); return; }
+      clapOn = true;
+      setClapBtnLabel(true);
+      AV.setStatus('CLAP WAKE ARMED');
+      setTimeout(() => { if (clapOn) AV.setStatus('READY · HOLD SPACE OR CLAP'); }, 2000);
+    } else {
+      clapOn = false;
+      await closeClapListener();
+      setClapBtnLabel(false);
+      AV.setStatus('READY · HOLD SPACE');
+    }
+  });
+
+  // ---------- Gate dialog ----------
+  function showGate(m) {
+    const el = document.createElement('div');
+    el.className = 'ultron-gate';
+    const riskLine = m.decision.risk === 'low'
+      ? 'Low risk.'
+      : `Confusion risk ${m.decision.upset.toFixed(2)} · commitment risk ${m.decision.commits.toFixed(2)}.`;
+    el.innerHTML = `
+      <div class="title">SHALL I PROCEED? — ${m.decision.risk.toUpperCase()} RISK</div>
+      <div>${riskLine}</div>
+      <pre></pre>
+      <div class="row">
+        <button class="deny" data-act="deny">DENY</button>
+        <button data-act="approve">APPROVE</button>
+      </div>`;
+    el.querySelector('pre').textContent = m.preview;
+    // Pause TTS and listening while a decision is pending.
+    try { window.speechSynthesis?.cancel(); } catch {}
+    el.addEventListener('click', (e) => {
+      const act = e.target?.dataset?.act;
+      if (!act) return;
+      send({ type: act, id: m.id });
+      el.remove();
+      pendingGates.delete(m.id);
+    });
+    document.body.appendChild(el);
+    pendingGates.set(m.id, el);
+    AV.setStatus('AWAITING APPROVAL');
+  }
+  } // end main()
+})();
+</script>
+</body>
+</html>
